@@ -1,5 +1,6 @@
 /**
  * Beget Mail Generator - Client-side JavaScript
+ * Gothic Theme Edition
  */
 
 // Global state
@@ -32,7 +33,7 @@ const lastResultsCard = document.getElementById('lastResultsCard');
 const lastResultsText = document.getElementById('lastResultsText');
 const lastSuccessCount = document.getElementById('lastSuccessCount');
 const lastErrorCount = document.getElementById('lastErrorCount');
-const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+const deleteModal = document.getElementById('deleteModal');
 const deleteCount = document.getElementById('deleteCount');
 
 // Initialize
@@ -71,10 +72,14 @@ function setupEventListeners() {
     // Delete selected
     deleteSelectedBtn.addEventListener('click', () => {
         deleteCount.textContent = selectedMailboxes.size;
-        deleteModal.show();
+        showModal();
     });
     
     document.getElementById('confirmDeleteBtn').addEventListener('click', deleteSelected);
+    document.getElementById('cancelDeleteBtn').addEventListener('click', hideModal);
+    
+    // Close modal on overlay click
+    deleteModal.querySelector('.modal-overlay').addEventListener('click', hideModal);
     
     // Copy selected
     copySelectedBtn.addEventListener('click', copySelected);
@@ -86,6 +91,17 @@ function setupEventListeners() {
     });
 }
 
+// Modal functions
+function showModal() {
+    deleteModal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function hideModal() {
+    deleteModal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
 // Check API connection
 async function checkConnection() {
     try {
@@ -93,15 +109,18 @@ async function checkConnection() {
         const data = await response.json();
         
         if (data.success) {
-            connectionStatus.className = 'badge bg-success me-3';
-            connectionStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Подключено';
+            connectionStatus.classList.add('connected');
+            connectionStatus.classList.remove('error');
+            connectionStatus.querySelector('.status-text').textContent = 'Подключено';
         } else {
-            connectionStatus.className = 'badge bg-danger me-3';
-            connectionStatus.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Ошибка API';
+            connectionStatus.classList.add('error');
+            connectionStatus.classList.remove('connected');
+            connectionStatus.querySelector('.status-text').textContent = 'Ошибка API';
         }
     } catch (error) {
-        connectionStatus.className = 'badge bg-danger me-3';
-        connectionStatus.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Нет связи';
+        connectionStatus.classList.add('error');
+        connectionStatus.classList.remove('connected');
+        connectionStatus.querySelector('.status-text').textContent = 'Нет связи';
     }
 }
 
@@ -128,11 +147,11 @@ async function loadDomains() {
             showAlert(`Загружено ${domains.length} доменов`, 'success');
         } else {
             domainSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
-            showAlert(data.error || 'Не удалось загрузить домены', 'danger');
+            showAlert(data.error || 'Не удалось загрузить домены', 'error');
         }
     } catch (error) {
         domainSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
-        showAlert('Ошибка подключения к серверу', 'danger');
+        showAlert('Ошибка подключения к серверу', 'error');
     } finally {
         domainSelect.disabled = false;
     }
@@ -150,7 +169,7 @@ async function loadLocalMailboxes() {
             updateStats();
         }
     } catch (error) {
-        showAlert('Ошибка загрузки локальных данных', 'danger');
+        showAlert('Ошибка загрузки локальных данных', 'error');
     }
 }
 
@@ -158,7 +177,7 @@ async function loadLocalMailboxes() {
 async function loadBegetMailboxes() {
     const domain = domainSelect.value;
     if (!domain) {
-        showAlert('Выберите домен для загрузки', 'warning');
+        showAlert('Выберите домен для загрузки', 'info');
         return;
     }
     
@@ -169,10 +188,10 @@ async function loadBegetMailboxes() {
         if (data.success) {
             showAlert(`На Beget найдено ${data.mailboxes.length} ящиков для ${domain}`, 'info');
         } else {
-            showAlert(data.error || 'Ошибка загрузки', 'danger');
+            showAlert(data.error || 'Ошибка загрузки', 'error');
         }
     } catch (error) {
-        showAlert('Ошибка подключения', 'danger');
+        showAlert('Ошибка подключения', 'error');
     }
 }
 
@@ -184,21 +203,20 @@ async function handleGenerate(e) {
     const count = parseInt(countInput.value);
     
     if (!domain) {
-        showAlert('Пожалуйста, выберите домен', 'warning');
+        showAlert('Пожалуйста, выберите домен', 'info');
         return;
     }
     
     if (count < 1 || count > 50) {
-        showAlert('Количество должно быть от 1 до 50', 'warning');
+        showAlert('Количество должно быть от 1 до 50', 'info');
         return;
     }
     
     // Show progress
     generateBtn.disabled = true;
-    generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Генерация...';
+    generateBtn.innerHTML = '⏳ Генерация...';
     progressContainer.classList.remove('d-none');
     progressBar.style.width = '0%';
-    progressBar.textContent = '0%';
     progressText.textContent = `Создание ${count} почтовых ящиков...`;
     
     // Simulate progress (actual API is sequential)
@@ -207,7 +225,6 @@ async function handleGenerate(e) {
         progress += Math.random() * 15;
         if (progress > 95) progress = 95;
         progressBar.style.width = `${progress}%`;
-        progressBar.textContent = `${Math.round(progress)}%`;
     }, 1000);
     
     try {
@@ -221,7 +238,6 @@ async function handleGenerate(e) {
         
         clearInterval(progressInterval);
         progressBar.style.width = '100%';
-        progressBar.textContent = '100%';
         
         if (data.success) {
             // Show results
@@ -238,20 +254,20 @@ async function handleGenerate(e) {
             
             if (data.failed > 0) {
                 console.log('Errors:', data.errors);
-                showAlert(`Ошибок: ${data.failed}. Проверьте консоль для деталей.`, 'warning');
+                showAlert(`Ошибок: ${data.failed}. Проверьте консоль для деталей.`, 'info');
             }
             
             // Reload mailboxes
             await loadLocalMailboxes();
         } else {
-            showAlert(data.error || 'Ошибка генерации', 'danger');
+            showAlert(data.error || 'Ошибка генерации', 'error');
         }
     } catch (error) {
         clearInterval(progressInterval);
-        showAlert('Ошибка подключения к серверу', 'danger');
+        showAlert('Ошибка подключения к серверу', 'error');
     } finally {
         generateBtn.disabled = false;
-        generateBtn.innerHTML = '<i class="bi bi-magic me-2"></i>Генерировать';
+        generateBtn.innerHTML = '⚔ Генерировать';
         
         setTimeout(() => {
             progressContainer.classList.add('d-none');
@@ -280,9 +296,9 @@ function renderMailboxes() {
     if (filtered.length === 0) {
         mailboxesTable.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center text-muted py-4">
-                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
-                    ${mailboxes.length === 0 ? 'Нет созданных почтовых ящиков' : 'Ничего не найдено'}
+                <td colspan="5" class="empty-state">
+                    <div class="empty-icon">📜</div>
+                    <p>${mailboxes.length === 0 ? 'Нет созданных почтовых ящиков' : 'Ничего не найдено'}</p>
                 </td>
             </tr>
         `;
@@ -290,31 +306,21 @@ function renderMailboxes() {
     }
     
     mailboxesTable.innerHTML = filtered.map(mailbox => `
-        <tr class="fade-in ${selectedMailboxes.has(mailbox.id) ? 'selected' : ''}" data-id="${mailbox.id}">
-            <td>
-                <input type="checkbox" class="form-check-input mailbox-check" 
+        <tr class="${selectedMailboxes.has(mailbox.id) ? 'selected' : ''}" data-id="${mailbox.id}">
+            <td class="text-center">
+                <input type="checkbox" class="gothic-checkbox mailbox-check" 
                        data-id="${mailbox.id}" ${selectedMailboxes.has(mailbox.id) ? 'checked' : ''}>
             </td>
-            <td>
-                <span class="fw-medium">${mailbox.email}</span>
-            </td>
-            <td>
-                <span class="password-cell">${mailbox.password}</span>
-            </td>
-            <td>
-                <small class="text-muted">${formatDate(mailbox.created_at)}</small>
-            </td>
-            <td>
-                <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary copy-btn" 
-                            onclick="copyMailbox('${mailbox.email}', '${mailbox.password}')" title="Копировать">
-                        <i class="bi bi-clipboard"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" 
-                            onclick="deleteSingle('${mailbox.domain}', '${mailbox.mailbox_name}')" title="Удалить">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
+            <td class="email-cell">${mailbox.email}</td>
+            <td class="password-cell">${mailbox.password}</td>
+            <td class="date-cell">${formatDate(mailbox.created_at)}</td>
+            <td class="actions-cell">
+                <button class="gothic-btn-icon" onclick="copyMailbox('${mailbox.email}', '${mailbox.password}')" title="Копировать">
+                    <i class="bi bi-clipboard"></i>
+                </button>
+                <button class="gothic-btn-icon gothic-btn-danger" onclick="deleteSingle('${mailbox.domain}', '${mailbox.mailbox_name}')" title="Удалить">
+                    <i class="bi bi-trash"></i>
+                </button>
             </td>
         </tr>
     `).join('');
@@ -375,19 +381,11 @@ function updateSelectionButtons() {
     const hasSelection = selectedMailboxes.size > 0;
     deleteSelectedBtn.disabled = !hasSelection;
     copySelectedBtn.disabled = !hasSelection;
-    
-    if (hasSelection) {
-        deleteSelectedBtn.innerHTML = `<i class="bi bi-trash me-1"></i>Удалить (${selectedMailboxes.size})`;
-        copySelectedBtn.innerHTML = `<i class="bi bi-clipboard me-1"></i>Копировать (${selectedMailboxes.size})`;
-    } else {
-        deleteSelectedBtn.innerHTML = '<i class="bi bi-trash me-1"></i>Удалить выбранные';
-        copySelectedBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Копировать';
-    }
 }
 
 // Delete selected mailboxes
 async function deleteSelected() {
-    deleteModal.hide();
+    hideModal();
     
     const toDelete = mailboxes
         .filter(m => selectedMailboxes.has(m.id))
@@ -396,7 +394,6 @@ async function deleteSelected() {
     if (toDelete.length === 0) return;
     
     deleteSelectedBtn.disabled = true;
-    deleteSelectedBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Удаление...';
     
     try {
         const response = await fetch('/api/mailboxes/delete-multiple', {
@@ -413,10 +410,10 @@ async function deleteSelected() {
             checkAll.checked = false;
             await loadLocalMailboxes();
         } else {
-            showAlert(data.error || 'Ошибка удаления', 'danger');
+            showAlert(data.error || 'Ошибка удаления', 'error');
         }
     } catch (error) {
-        showAlert('Ошибка подключения', 'danger');
+        showAlert('Ошибка подключения', 'error');
     } finally {
         updateSelectionButtons();
     }
@@ -439,10 +436,10 @@ async function deleteSingle(domain, mailbox) {
             showAlert('Почтовый ящик удален', 'success');
             await loadLocalMailboxes();
         } else {
-            showAlert(data.error || 'Ошибка удаления', 'danger');
+            showAlert(data.error || 'Ошибка удаления', 'error');
         }
     } catch (error) {
-        showAlert('Ошибка подключения', 'danger');
+        showAlert('Ошибка подключения', 'error');
     }
 }
 
@@ -481,10 +478,10 @@ async function exportAll() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            showAlert('Нет данных для экспорта', 'warning');
+            showAlert('Нет данных для экспорта', 'info');
         }
     } catch (error) {
-        showAlert('Ошибка экспорта', 'danger');
+        showAlert('Ошибка экспорта', 'error');
     }
 }
 
@@ -502,21 +499,31 @@ function copyToClipboard(text) {
     }
 }
 
-// Show alert
+// Show alert - Gothic style
 function showAlert(message, type = 'info') {
+    const icons = {
+        success: 'bi-check-circle',
+        error: 'bi-x-circle',
+        info: 'bi-info-circle'
+    };
+    
     const alert = document.createElement('div');
-    alert.className = `alert alert-${type} alert-dismissible fade show fade-in`;
+    alert.className = `gothic-alert gothic-alert-${type}`;
     alert.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <i class="bi ${icons[type]} alert-icon"></i>
+        <span class="alert-message">${message}</span>
+        <button class="alert-close" onclick="this.parentElement.remove()">×</button>
     `;
     
     alertsContainer.appendChild(alert);
     
     // Auto-dismiss after 5 seconds
     setTimeout(() => {
-        alert.classList.remove('show');
-        setTimeout(() => alert.remove(), 150);
+        if (alert.parentElement) {
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateY(-10px)';
+            setTimeout(() => alert.remove(), 300);
+        }
     }, 5000);
 }
 
