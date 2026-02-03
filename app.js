@@ -89,19 +89,29 @@ function generatePassword() {
 // Beget API call helper
 async function begetApiCall(method, params = {}) {
     const url = `${BEGET_API_BASE}/${method}`;
-    const queryParams = new URLSearchParams({
-        login: BEGET_LOGIN,
-        passwd: BEGET_PASSWORD,
-        input_format: 'json',
-        output_format: 'json',
-        input_data: JSON.stringify(params)
-    });
+    
+    // Manually build query string to ensure proper encoding
+    const queryParts = [
+        `login=${encodeURIComponent(BEGET_LOGIN)}`,
+        `passwd=${encodeURIComponent(BEGET_PASSWORD)}`,
+        `input_format=json`,
+        `output_format=json`,
+        `input_data=${encodeURIComponent(JSON.stringify(params))}`
+    ];
+    const queryString = queryParts.join('&');
+    
+    const fullUrl = `${url}?${queryString}`;
+    console.log(`API Call: ${method}`);
     
     try {
-        const response = await axios.get(`${url}?${queryParams.toString()}`);
+        const response = await axios.get(fullUrl);
+        console.log(`API Response (${method}):`, JSON.stringify(response.data).substring(0, 200));
         return response.data;
     } catch (error) {
         console.error(`API Error (${method}):`, error.message);
+        if (error.response) {
+            console.error('Response data:', error.response.data);
+        }
         throw error;
     }
 }
