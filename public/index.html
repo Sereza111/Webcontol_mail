@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚜ Beget Mail Generator ⚜</title>
+    <!-- Gothic Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:wght@400;600&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="gothic-container">
+        <!-- Header -->
+        <header class="gothic-header">
+            <h1>⚜ Mail Codex ⚜</h1>
+            <p class="subtitle">Генератор почтовых ящиков Beget</p>
+            <div class="connection-badge" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Проверка...</span>
+            </div>
+        </header>
+
+        <div class="divider"></div>
+
+        <!-- Alerts container -->
+        <div id="alertsContainer"></div>
+
+        <!-- Main content -->
+        <div class="main-grid">
+            <!-- Left column - Generation form -->
+            <div class="left-column">
+                <!-- Generation Card -->
+                <div class="gothic-card">
+                    <div class="card-header">
+                        <span class="header-icon">✠</span>
+                        Генерация почтовых ящиков
+                    </div>
+                    <div class="card-body">
+                        <form id="generateForm">
+                            <div class="form-group">
+                                <label for="domainSelect">
+                                    <i class="bi bi-globe"></i>
+                                    Домен
+                                </label>
+                                <select class="gothic-select" id="domainSelect" required>
+                                    <option value="">Загрузка доменов...</option>
+                                </select>
+                                <span class="form-hint">Выберите домен для создания почт</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="countInput">
+                                    <i class="bi bi-123"></i>
+                                    Количество почт
+                                </label>
+                                <input type="number" class="gothic-input" id="countInput" 
+                                       min="1" max="50" value="10" required>
+                                <span class="form-hint">Максимум 50 за один раз</span>
+                            </div>
+                            <button type="submit" class="gothic-btn gothic-btn-primary" id="generateBtn">
+                                ⚔ Генерировать
+                            </button>
+                        </form>
+
+                        <!-- Progress -->
+                        <div id="progressContainer" class="progress-container d-none">
+                            <div class="gothic-progress">
+                                <div id="progressBar" class="gothic-progress-bar" style="width: 0%"></div>
+                            </div>
+                            <p class="progress-text" id="progressText">Создание почтовых ящиков...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Card -->
+                <div class="gothic-card">
+                    <div class="card-header">
+                        <span class="header-icon">☽</span>
+                        Статистика
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-number" id="totalCreated">0</div>
+                                <div class="stat-label">Создано всего</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="todayCreated">0</div>
+                                <div class="stat-label">Сегодня</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions Card -->
+                <div class="gothic-card">
+                    <div class="card-header">
+                        <span class="header-icon">⚙</span>
+                        Действия
+                    </div>
+                    <div class="card-body actions-body">
+                        <button class="gothic-btn gothic-btn-secondary" id="refreshDomainsBtn">
+                            <i class="bi bi-arrow-clockwise"></i>
+                            Обновить домены
+                        </button>
+                        <button class="gothic-btn gothic-btn-secondary" id="loadBegetMailboxesBtn">
+                            <i class="bi bi-cloud-download"></i>
+                            Загрузить с Beget
+                        </button>
+                        <button class="gothic-btn gothic-btn-secondary" id="exportAllBtn">
+                            <i class="bi bi-download"></i>
+                            Экспорт всех
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right column - Mailboxes table -->
+            <div class="right-column">
+                <div class="gothic-card">
+                    <div class="card-header card-header-dark">
+                        <span>
+                            <span class="header-icon">📜</span>
+                            Созданные почтовые ящики
+                        </span>
+                        <div class="header-actions">
+                            <button class="gothic-btn-icon" id="selectAllBtn" title="Выбрать все">
+                                <i class="bi bi-check-all"></i>
+                            </button>
+                            <button class="gothic-btn-icon gothic-btn-danger" id="deleteSelectedBtn" disabled title="Удалить выбранные">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <button class="gothic-btn-icon gothic-btn-success" id="copySelectedBtn" disabled title="Копировать">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <!-- Filter -->
+                        <div class="filter-bar">
+                            <select class="gothic-select gothic-select-sm" id="filterDomain">
+                                <option value="">Все домены</option>
+                            </select>
+                            <input type="text" class="gothic-input gothic-input-sm" 
+                                   id="searchInput" placeholder="Поиск по email...">
+                            <span class="filter-count">
+                                Показано: <span id="shownCount">0</span> из <span id="totalCount">0</span>
+                            </span>
+                        </div>
+
+                        <!-- Table -->
+                        <div class="table-wrapper">
+                            <table class="gothic-table">
+                                <thead>
+                                    <tr>
+                                        <th class="th-checkbox">
+                                            <input type="checkbox" class="gothic-checkbox" id="checkAll">
+                                        </th>
+                                        <th>Email</th>
+                                        <th>Пароль</th>
+                                        <th>Дата создания</th>
+                                        <th class="th-actions">Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mailboxesTable">
+                                    <tr>
+                                        <td colspan="5" class="empty-state">
+                                            <div class="empty-icon">📜</div>
+                                            <p>Нет созданных почтовых ящиков</p>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Last generation results -->
+                <div class="gothic-card" id="lastResultsCard" style="display: none;">
+                    <div class="card-header card-header-success">
+                        <span>
+                            <span class="header-icon">✓</span>
+                            Результаты последней генерации
+                        </span>
+                        <button class="gothic-btn-icon gothic-btn-light" id="copyLastResultsBtn" title="Копировать все">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="results-stats">
+                            <div class="result-success">
+                                <i class="bi bi-check-circle"></i>
+                                Успешно создано: <strong id="lastSuccessCount">0</strong>
+                            </div>
+                            <div class="result-error">
+                                <i class="bi bi-x-circle"></i>
+                                Ошибок: <strong id="lastErrorCount">0</strong>
+                            </div>
+                        </div>
+                        <textarea class="gothic-textarea" id="lastResultsText" 
+                                  rows="5" readonly placeholder="email:password"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ornament">✠ ✠ ✠</div>
+
+        <!-- Footer -->
+        <footer class="gothic-footer">
+            <span class="footer-icon">⚜</span>
+            Beget Mail Generator v1.0 | 
+            <a href="https://beget.com/ru/kb/api/funkczii-dlya-raboty-s-pochtoj" target="_blank">
+                Документация Beget API
+            </a>
+        </footer>
+    </div>
+
+    <!-- Delete confirmation modal -->
+    <div class="gothic-modal" id="deleteModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="header-icon">⚠</span>
+                Подтверждение удаления
+            </div>
+            <div class="modal-body">
+                <p>Вы уверены, что хотите удалить выбранные почтовые ящики?</p>
+                <p class="warning-text"><strong>Внимание:</strong> Это действие необратимо!</p>
+                <p>Будет удалено: <strong id="deleteCount">0</strong> ящиков</p>
+            </div>
+            <div class="modal-footer">
+                <button class="gothic-btn gothic-btn-secondary" id="cancelDeleteBtn">Отмена</button>
+                <button class="gothic-btn gothic-btn-danger" id="confirmDeleteBtn">
+                    <i class="bi bi-trash"></i>
+                    Удалить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

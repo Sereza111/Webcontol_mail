@@ -1,0 +1,22 @@
+# Стек для Portainer: Web Editor → Stacks → Add stack → вставить compose или указать репозиторий.
+# Перед деплоем задайте BEGET_LOGIN и BEGET_PASSWORD в Environment variables стека.
+
+services:
+  beget-mail:
+    build: .
+    image: beget-mail-generator:latest
+    container_name: beget-mail
+    restart: unless-stopped
+    ports:
+      - "${PUBLISH_PORT:-3000}:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      BEGET_LOGIN: ${BEGET_LOGIN}
+      BEGET_PASSWORD: ${BEGET_PASSWORD}
+      SQLITE_PATH: /data/mailboxes.db
+    volumes:
+      - beget-mail-data:/data
+
+volumes:
+  beget-mail-data:
