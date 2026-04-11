@@ -1,5 +1,9 @@
 # Стек для Portainer: Web Editor → Stacks → Add stack → вставить compose или указать репозиторий.
 # Перед деплоем задайте BEGET_LOGIN и BEGET_PASSWORD в Environment variables стека.
+#
+# Образ из GitHub Actions (GHCR): уберите build: . и задайте image, например:
+#   image: ghcr.io/sereza111/webcontol_mail:latest
+# Для приватного пакета в Portainer: Registry → Add registry → ghcr.io, логин GitHub + PAT с read:packages.
 
 services:
   beget-mail:
