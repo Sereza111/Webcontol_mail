@@ -1,0 +1,22 @@
+# Локальная сборка образа (не для Portainer, если там падает compose build).
+# docker compose -f docker-compose.build.yml up --build
+
+services:
+  beget-mail:
+    build: .
+    image: beget-mail-generator:local
+    container_name: beget-mail
+    restart: unless-stopped
+    ports:
+      - "${PUBLISH_PORT:-3000}:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      BEGET_LOGIN: ${BEGET_LOGIN}
+      BEGET_PASSWORD: ${BEGET_PASSWORD}
+      SQLITE_PATH: /data/mailboxes.db
+    volumes:
+      - beget-mail-data:/data
+
+volumes:
+  beget-mail-data:

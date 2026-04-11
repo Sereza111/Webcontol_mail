@@ -1,14 +1,15 @@
-# Стек для Portainer: Web Editor → Stacks → Add stack → вставить compose или указать репозиторий.
-# Перед деплоем задайте BEGET_LOGIN и BEGET_PASSWORD в Environment variables стека.
+# Portainer: только pull образа с GitHub Actions (GHCR). Без build: — иначе на части хостов/прокси
+# BuildKit ломается с ошибкой http2 frame too large (прокси отдаёт HTTP/1.1 вместо gRPC).
 #
-# Образ из GitHub Actions (GHCR): уберите build: . и задайте image, например:
-#   image: ghcr.io/sereza111/webcontol_mail:latest
-# Для приватного пакета в Portainer: Registry → Add registry → ghcr.io, логин GitHub + PAT с read:packages.
+# Локальная сборка: docker compose -f docker-compose.build.yml build && docker compose -f docker-compose.build.yml up
+#
+# Переменные стека: BEGET_LOGIN, BEGET_PASSWORD. Опционально PUBLISH_PORT.
+# Приватный GHCR: Portainer → Registries → ghcr.io + GitHub PAT (read:packages).
 
 services:
   beget-mail:
-    build: .
-    image: beget-mail-generator:latest
+    image: ghcr.io/sereza111/webcontol_mail:latest
+    pull_policy: always
     container_name: beget-mail
     restart: unless-stopped
     ports:
