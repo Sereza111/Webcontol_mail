@@ -12,6 +12,9 @@ services:
     pull_policy: always
     container_name: beget-mail
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "${PUBLISH_PORT:-3000}:3000"
     environment:
