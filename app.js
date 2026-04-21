@@ -116,21 +116,51 @@ async function begetApiCall(method, params = {}) {
     }
 }
 
+function extractBegetError(result, fallback = 'Beget API request failed') {
+    if (!result || typeof result !== 'object') {
+        return fallback;
+    }
+
+    const knownError =
+        result.answer?.error ||
+        result.answer?.message ||
+        result.error ||
+        result.message;
+
+    if (knownError) {
+        return String(knownError);
+    }
+
+    if (result.answer?.status && result.answer.status !== 'success') {
+        return `Beget API status: ${result.answer.status}`;
+    }
+
+    if (result.status && result.status !== 'success') {
+        return `Beget request status: ${result.status}`;
+    }
+
+    return fallback;
+}
+
 // API Routes
 
 // Get list of domains
 app.get('/api/domains', async (req, res) => {
     try {
         const result = await rateLimitedRequest(() => begetApiCall('domain/getList'));
-        
-        if (result.status === 'success' && result.answer && result.answer.result) {
-            const domains = result.answer.result.map(d => ({
+
+        const requestOk = result?.status === 'success';
+        const apiOk = !result?.answer?.status || result.answer.status === 'success';
+        const domainsList = Array.isArray(result?.answer?.result) ? result.answer.result : [];
+
+        if (requestOk && apiOk) {
+            const domains = domainsList.map(d => ({
                 id: d.id,
                 fqdn: d.fqdn
             }));
             res.json({ success: true, domains });
         } else {
-            res.json({ success: false, error: result.answer?.error || 'Failed to get domains' });
+            res.json({ success: false, error: extractBegetError(result, 'Failed to get domains') });
         }
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -142,11 +172,14 @@ app.get('/api/mailboxes/:domain', async (req, res) => {
     try {
         const { domain } = req.params;
         const result = await rateLimitedRequest(() => begetApiCall('mail/getMailboxList', { domain }));
-        
-        if (result.status === 'success') {
-            res.json({ success: true, mailboxes: result.answer?.result || [] });
+
+        const requestOk = result?.status === 'success';
+        const apiOk = !result?.answer?.status || result.answer.status === 'success';
+
+        if (requestOk && apiOk) {
+            res.json({ success: true, mailboxes: Array.isArray(result.answer?.result) ? result.answer.result : [] });
         } else {
-            res.json({ success: false, error: result.answer?.error || 'Failed to get mailboxes' });
+            res.json({ success: false, error: extractBegetError(result, 'Failed to get mailboxes') });
         }
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -360,15 +393,18 @@ app.get('/api/export', (req, res) => {
 app.get('/api/check-connection', async (req, res) => {
     try {
         const result = await begetApiCall('user/getAccountInfo');
-        
-        if (result.status === 'success') {
+
+        const requestOk = result?.status === 'success';
+        const apiOk = !result?.answer?.status || result.answer.status === 'success';
+
+        if (requestOk && apiOk) {
             res.json({ 
                 success: true, 
                 message: 'Connected to Beget API',
                 user: result.answer?.result?.user_login || BEGET_LOGIN
             });
         } else {
-            res.json({ success: false, error: 'Failed to connect to Beget API' });
+            res.json({ success: false, error: extractBegetError(result, 'Failed to connect to Beget API') });
         }
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
