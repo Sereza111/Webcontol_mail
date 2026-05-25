@@ -1,10 +1,5 @@
-# Portainer: только pull образа с GitHub Actions (GHCR). Без build: — иначе на части хостов/прокси
-# BuildKit ломается с ошибкой http2 frame too large (прокси отдаёт HTTP/1.1 вместо gRPC).
-#
-# Локальная сборка: docker compose -f docker-compose.build.yml build && docker compose -f docker-compose.build.yml up
-#
-# Переменные стека: BEGET_LOGIN, BEGET_PASSWORD. Опционально PUBLISH_PORT.
-# Приватный GHCR: Portainer → Registries → ghcr.io + GitHub PAT (read:packages).
+# Portainer-friendly compose
+# Portainer: только pull образа с GitHub Actions (GHCR)
 
 services:
   beget-mail:
@@ -12,17 +7,22 @@ services:
     pull_policy: always
     container_name: beget-mail
     restart: unless-stopped
+
     dns:
       - 1.1.1.1
       - 8.8.8.8
+
+    # ←←← ИСПРАВИЛИ ЗДЕСЬ
     ports:
-      - "${PUBLISH_PORT:-3000}:3000"
+      - "3002:3000"          # Жёстко 3002 (3000 занят)
+
     environment:
       HOST: 0.0.0.0
       PORT: "3000"
       BEGET_LOGIN: ${BEGET_LOGIN}
       BEGET_PASSWORD: ${BEGET_PASSWORD}
       SQLITE_PATH: /data/mailboxes.db
+
     volumes:
       - beget-mail-data:/data
 
