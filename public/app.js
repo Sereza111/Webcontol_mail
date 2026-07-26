@@ -23,6 +23,7 @@ const filterDomain = document.getElementById('filterDomain');
 const searchInput = document.getElementById('searchInput');
 const checkAll = document.getElementById('checkAll');
 const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+const deleteAllBtn = document.getElementById('deleteAllBtn');
 const copySelectedBtn = document.getElementById('copySelectedBtn');
 const selectAllBtn = document.getElementById('selectAllBtn');
 const totalCreated = document.getElementById('totalCreated');
@@ -35,6 +36,7 @@ const lastSuccessCount = document.getElementById('lastSuccessCount');
 const lastErrorCount = document.getElementById('lastErrorCount');
 const deleteModal = document.getElementById('deleteModal');
 const deleteCount = document.getElementById('deleteCount');
+const deleteModalMessage = document.getElementById('deleteModalMessage');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -54,6 +56,9 @@ function setupEventListeners() {
     
     // Load Beget mailboxes
     document.getElementById('loadBegetMailboxesBtn').addEventListener('click', loadBegetMailboxes);
+
+    // Delete every mailbox currently displayed by the filters
+    deleteAllBtn.addEventListener('click', selectDisplayedForDeletion);
     
     // Export all
     document.getElementById('exportAllBtn').addEventListener('click', exportAll);
@@ -71,6 +76,7 @@ function setupEventListeners() {
     
     // Delete selected
     deleteSelectedBtn.addEventListener('click', () => {
+        deleteModalMessage.textContent = 'Вы уверены, что хотите удалить выбранные почтовые ящики?';
         deleteCount.textContent = selectedMailboxes.size;
         showModal();
     });
@@ -165,8 +171,14 @@ async function loadLocalMailboxes() {
         
         if (data.success) {
             mailboxes = data.mailboxes;
+            const existingIds = new Set(mailboxes.map(mailbox => mailbox.id));
+            selectedMailboxes = new Set(
+                [...selectedMailboxes].filter(id => existingIds.has(id))
+            );
+            checkAll.checked = false;
             renderMailboxes();
             updateStats();
+            updateSelectionButtons();
         }
     } catch (error) {
         showAlert('Ошибка загрузки локальных данных', 'error');
@@ -181,17 +193,36 @@ async function loadBegetMailboxes() {
         return;
     }
     
+    const button = document.getElementById('loadBegetMailboxesBtn');
+    const originalContent = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновление...';
+
     try {
-        const response = await fetch(`/api/mailboxes/${domain}`);
+        const response = await fetch('/api/mailboxes/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain })
+        });
         const data = await response.json();
-        
+
         if (data.success) {
-            showAlert(`На Beget найдено ${data.mailboxes.length} ящиков для ${domain}`, 'info');
+            selectedMailboxes.clear();
+            await loadLocalMailboxes();
+            filterDomain.value = domain;
+            renderMailboxes();
+            showAlert(
+                `Список обновлён: ${data.total} ящиков, добавлено ${data.imported}, убрано ${data.removed}`,
+                'success'
+            );
         } else {
             showAlert(data.error || 'Ошибка загрузки', 'error');
         }
     } catch (error) {
         showAlert('Ошибка подключения', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalContent;
     }
 }
 
@@ -233,9 +264,9 @@ async function handleGenerate(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ domain, count })
         });
-        
+
         const data = await response.json();
-        
+
         clearInterval(progressInterval);
         progressBar.style.width = '100%';
         
@@ -277,18 +308,7 @@ async function handleGenerate(e) {
 
 // Render mailboxes table
 function renderMailboxes() {
-    const filter = filterDomain.value;
-    const search = searchInput.value.toLowerCase();
-    
-    let filtered = mailboxes;
-    
-    if (filter) {
-        filtered = filtered.filter(m => m.domain === filter);
-    }
-    
-    if (search) {
-        filtered = filtered.filter(m => m.email.toLowerCase().includes(search));
-    }
+    const filtered = getDisplayedMailboxes();
     
     totalCount.textContent = mailboxes.length;
     shownCount.textContent = filtered.length;
@@ -311,14 +331,16 @@ function renderMailboxes() {
                 <input type="checkbox" class="gothic-checkbox mailbox-check" 
                        data-id="${mailbox.id}" ${selectedMailboxes.has(mailbox.id) ? 'checked' : ''}>
             </td>
-            <td class="email-cell">${mailbox.email}</td>
-            <td class="password-cell">${mailbox.password}</td>
+            <td class="email-cell">${escapeHtml(mailbox.email)}</td>
+            <td class="password-cell">${mailbox.password
+                ? escapeHtml(mailbox.password)
+                : '<span title="Beget не возвращает пароли существующих ящиков">не сохранён</span>'}</td>
             <td class="date-cell">${formatDate(mailbox.created_at)}</td>
             <td class="actions-cell">
-                <button class="gothic-btn-icon" onclick="copyMailbox('${mailbox.email}', '${mailbox.password}')" title="Копировать">
+                <button class="gothic-btn-icon" onclick="copyMailbox('${escapeInlineJsString(mailbox.email)}', '${escapeInlineJsString(mailbox.password || '')}')" title="${mailbox.password ? 'Копировать email и пароль' : 'Копировать email'}">
                     <i class="bi bi-clipboard"></i>
                 </button>
-                <button class="gothic-btn-icon gothic-btn-danger" onclick="deleteSingle('${mailbox.domain}', '${mailbox.mailbox_name}')" title="Удалить">
+                <button class="gothic-btn-icon gothic-btn-danger" onclick="deleteSingle('${escapeInlineJsString(mailbox.domain)}', '${escapeInlineJsString(mailbox.mailbox_name)}')" title="Удалить">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -339,6 +361,22 @@ function renderMailboxes() {
             updateSelectionButtons();
         });
     });
+}
+
+function getDisplayedMailboxes() {
+    const filter = filterDomain.value;
+    const search = searchInput.value.trim().toLowerCase();
+    let filtered = mailboxes;
+
+    if (filter) {
+        filtered = filtered.filter(mailbox => mailbox.domain === filter);
+    }
+
+    if (search) {
+        filtered = filtered.filter(mailbox => mailbox.email.toLowerCase().includes(search));
+    }
+
+    return filtered;
 }
 
 // Update stats
@@ -383,6 +421,22 @@ function updateSelectionButtons() {
     copySelectedBtn.disabled = !hasSelection;
 }
 
+function selectDisplayedForDeletion() {
+    const displayed = getDisplayedMailboxes();
+    if (displayed.length === 0) {
+        showAlert('В списке нет почтовых ящиков для удаления', 'info');
+        return;
+    }
+
+    selectedMailboxes = new Set(displayed.map(mailbox => mailbox.id));
+    checkAll.checked = true;
+    renderMailboxes();
+    updateSelectionButtons();
+    deleteModalMessage.textContent = 'Удалить все отображаемые почтовые ящики с Beget?';
+    deleteCount.textContent = displayed.length;
+    showModal();
+}
+
 // Delete selected mailboxes
 async function deleteSelected() {
     hideModal();
@@ -403,12 +457,25 @@ async function deleteSelected() {
         });
         
         const data = await response.json();
-        
+
         if (data.success) {
-            showAlert(`Удалено ${data.total} ящиков`, 'success');
+            const failedEmails = new Set(data.errors.map(error => error.email));
             selectedMailboxes.clear();
             checkAll.checked = false;
             await loadLocalMailboxes();
+
+            if (data.failed > 0) {
+                selectedMailboxes = new Set(
+                    mailboxes
+                        .filter(mailbox => failedEmails.has(mailbox.email))
+                        .map(mailbox => mailbox.id)
+                );
+                renderMailboxes();
+                updateSelectionButtons();
+                showAlert(`Удалено ${data.total}, не удалось удалить ${data.failed}`, 'error');
+            } else {
+                showAlert(`Удалено ${data.total} ящиков`, 'success');
+            }
         } else {
             showAlert(data.error || 'Ошибка удаления', 'error');
         }
@@ -446,15 +513,19 @@ async function deleteSingle(domain, mailbox) {
 // Copy selected to clipboard
 function copySelected() {
     const selected = mailboxes.filter(m => selectedMailboxes.has(m.id));
-    const text = selected.map(m => `${m.email}:${m.password}`).join('\n');
+    const text = selected.map(formatMailboxCredentials).join('\n');
     copyToClipboard(text);
     showAlert(`Скопировано ${selected.length} записей`, 'success');
 }
 
 // Copy single mailbox
 function copyMailbox(email, password) {
-    copyToClipboard(`${email}:${password}`);
-    showAlert('Скопировано!', 'success');
+    copyToClipboard(password ? `${email}:${password}` : email);
+    showAlert(password ? 'Email и пароль скопированы!' : 'Email скопирован!', 'success');
+}
+
+function formatMailboxCredentials(mailbox) {
+    return mailbox.password ? `${mailbox.email}:${mailbox.password}` : mailbox.email;
 }
 
 // Export all mailboxes
@@ -538,6 +609,30 @@ function formatDate(dateStr) {
         hour: '2-digit',
         minute: '2-digit'
     });
+}
+
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[character]);
+}
+
+function escapeJsString(value) {
+    return String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+}
+
+function escapeInlineJsString(value) {
+    return escapeHtml(escapeJsString(value));
 }
 
 // Debounce helper

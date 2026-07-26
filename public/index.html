@@ -106,7 +106,11 @@
                         </button>
                         <button class="gothic-btn gothic-btn-secondary" id="loadBegetMailboxesBtn">
                             <i class="bi bi-cloud-download"></i>
-                            Загрузить с Beget
+                            Обновить с Beget
+                        </button>
+                        <button class="gothic-btn gothic-btn-danger" id="deleteAllBtn">
+                            <i class="bi bi-trash"></i>
+                            Удалить всё из списка
                         </button>
                         <button class="gothic-btn gothic-btn-secondary" id="exportAllBtn">
                             <i class="bi bi-download"></i>
@@ -226,7 +230,7 @@
                 Подтверждение удаления
             </div>
             <div class="modal-body">
-                <p>Вы уверены, что хотите удалить выбранные почтовые ящики?</p>
+                <p id="deleteModalMessage">Вы уверены, что хотите удалить выбранные почтовые ящики?</p>
                 <p class="warning-text"><strong>Внимание:</strong> Это действие необратимо!</p>
                 <p>Будет удалено: <strong id="deleteCount">0</strong> ящиков</p>
             </div>
