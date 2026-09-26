@@ -50,20 +50,19 @@ async function rateLimitedRequest(requestFn) {
 
 // Generate random mailbox name (5-12 lowercase letters/numbers)
 function generateMailboxName() {
-    const length = Math.floor(Math.random() * 8) + 5; // 5-12 characters
+    const length = crypto.randomInt(5, 13);
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
-    // First character should be a letter
-    result += chars.charAt(Math.floor(Math.random() * 26));
+    result += chars.charAt(crypto.randomInt(26));
     for (let i = 1; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
+        result += chars.charAt(crypto.randomInt(chars.length));
     }
     return result;
 }
 
 // Generate random password (12+ characters with letters, numbers, and symbols)
 function generatePassword() {
-    const length = Math.floor(Math.random() * 5) + 12; // 12-16 characters
+    const length = crypto.randomInt(14, 19);
     const lowercase = 'abcdefghijklmnopqrstuvwxyz';
     const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const numbers = '0123456789';
@@ -72,18 +71,32 @@ function generatePassword() {
     
     // Ensure at least one of each type
     let password = '';
-    password += lowercase.charAt(Math.floor(Math.random() * lowercase.length));
-    password += uppercase.charAt(Math.floor(Math.random() * uppercase.length));
-    password += numbers.charAt(Math.floor(Math.random() * numbers.length));
-    password += symbols.charAt(Math.floor(Math.random() * symbols.length));
+    password += lowercase.charAt(crypto.randomInt(lowercase.length));
+    password += uppercase.charAt(crypto.randomInt(uppercase.length));
+    password += numbers.charAt(crypto.randomInt(numbers.length));
+    password += symbols.charAt(crypto.randomInt(symbols.length));
     
     // Fill the rest
     for (let i = 4; i < length; i++) {
-        password += allChars.charAt(Math.floor(Math.random() * allChars.length));
+        password += allChars.charAt(crypto.randomInt(allChars.length));
     }
     
-    // Shuffle password
-    return password.split('').sort(() => Math.random() - 0.5).join('');
+    const characters = password.split('');
+    for (let i = characters.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1);
+        [characters[i], characters[j]] = [characters[j], characters[i]];
+    }
+    return characters.join('');
+}
+
+function validDomain(domain) {
+    return typeof domain === 'string' && domain.length <= 253 &&
+        /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/i.test(domain);
+}
+
+function begetSucceeded(result) {
+    return result?.status === 'success' &&
+        (!result.answer?.status || result.answer.status === 'success');
 }
 
 // Beget API call helper
@@ -240,6 +253,50 @@ app.get('/api/domains', async (req, res) => {
     }
 });
 
+// Attach a domain registered elsewhere to the Beget account. DNS stays at its registrar.
+app.post('/api/domains', async (req, res) => {
+    const domain = typeof req.body?.domain === 'string' ? req.body.domain.trim().toLowerCase() : '';
+    if (!validDomain(domain)) {
+        return res.status(400).json({ success: false, error: 'Введите корректный домен' });
+    }
+
+    try {
+        const current = await rateLimitedRequest(() => begetApiCall('domain/getList'));
+        if (!begetSucceeded(current)) {
+            return res.status(502).json({ success: false, error: extractBegetError(current) });
+        }
+        if (current.answer?.result?.some(item => item.fqdn?.toLowerCase() === domain)) {
+            return res.json({ success: true, domain, alreadyExists: true });
+        }
+
+        const zones = await rateLimitedRequest(() => begetApiCall('domain/getZoneList'));
+        if (!begetSucceeded(zones)) {
+            return res.status(502).json({ success: false, error: extractBegetError(zones) });
+        }
+        const zone = Object.entries(zones.answer?.result || {})
+            .filter(([name]) => domain.endsWith(`.${name}`))
+            .sort((a, b) => b[0].length - a[0].length)[0];
+        if (!zone) {
+            return res.status(400).json({ success: false, error: 'Зона домена не поддерживается Beget' });
+        }
+        const hostname = domain.slice(0, -zone[0].length - 1);
+        if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(hostname)) {
+            return res.status(400).json({ success: false, error: 'Укажите основной домен без поддомена' });
+        }
+
+        const added = await rateLimitedRequest(() => begetApiCall('domain/addVirtual', {
+            hostname,
+            zone_id: zone[1].id
+        }));
+        if (!begetSucceeded(added)) {
+            return res.status(502).json({ success: false, error: extractBegetError(added) });
+        }
+        res.status(201).json({ success: true, domain, id: added.answer?.result });
+    } catch (error) {
+        res.status(502).json({ success: false, error: error.message });
+    }
+});
+
 // Get mailbox list for a domain
 app.get('/api/mailboxes/:domain', async (req, res) => {
     try {
@@ -333,12 +390,12 @@ app.get('/api/local-mailboxes', (req, res) => {
 app.post('/api/generate', async (req, res) => {
     try {
         const { domain, count = 10 } = req.body;
-        
-        if (!domain) {
-            return res.status(400).json({ success: false, error: 'Domain is required' });
+
+        if (!validDomain(domain) || !Number.isInteger(count) || count < 1 || count > 50) {
+            return res.status(400).json({ success: false, error: 'Укажите домен и количество от 1 до 50' });
         }
-        
-        const maxCount = Math.min(count, 50); // Limit to 50 per request
+
+        const maxCount = count;
         const results = [];
         const errors = [];
         
@@ -400,6 +457,33 @@ app.post('/api/generate', async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/mailbox/password', async (req, res) => {
+    const domain = typeof req.body?.domain === 'string' ? req.body.domain.trim().toLowerCase() : '';
+    const mailbox = typeof req.body?.mailbox === 'string' ? req.body.mailbox.trim() : '';
+    const password = req.body?.password || generatePassword();
+
+    if (!validDomain(domain) || !/^[a-z0-9._+-]{1,64}$/i.test(mailbox) ||
+        typeof password !== 'string' || password.length < 12 || password.length > 128 || /[\r\n]/.test(password)) {
+        return res.status(400).json({ success: false, error: 'Проверьте адрес и пароль (12–128 символов)' });
+    }
+
+    try {
+        const result = await rateLimitedRequest(() => begetApiCall('mail/changeMailboxPassword', {
+            domain,
+            mailbox,
+            mailbox_password: password
+        }));
+        if (!begetSucceeded(result)) {
+            return res.status(502).json({ success: false, error: extractBegetError(result) });
+        }
+        db.prepare('UPDATE mailboxes SET password = ? WHERE email = ?')
+            .run(password, `${mailbox}@${domain}`);
+        res.json({ success: true, email: `${mailbox}@${domain}`, password });
+    } catch (error) {
+        res.status(502).json({ success: false, error: error.message });
     }
 });
 

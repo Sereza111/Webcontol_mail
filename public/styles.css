@@ -971,3 +971,193 @@ body::before {
         gap: 8px;
     }
 }
+
+/* Mail Codex workspace */
+* { letter-spacing: 0 !important; }
+
+body {
+    font-family: Inter, 'Segoe UI', sans-serif;
+    background: #090d10;
+    color: #dce4e5;
+}
+
+body::before {
+    background-image:
+        linear-gradient(90deg, rgba(147, 183, 190, .025) 1px, transparent 1px),
+        linear-gradient(rgba(147, 183, 190, .025) 1px, transparent 1px);
+    background-size: 26px 26px;
+}
+
+.gothic-container { max-width: 1520px; padding: 22px 28px; }
+.main-grid { grid-template-columns: minmax(290px, 330px) minmax(0, 1fr); gap: 18px; }
+.left-column, .right-column { gap: 16px; min-width: 0; }
+
+.gothic-header {
+    min-height: 92px;
+    padding: 8px 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    text-align: left;
+}
+.brand-lockup { display: flex; align-items: center; gap: 16px; margin-right: auto; }
+.brand-sigil {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border: 1px solid #4a626a;
+    background: linear-gradient(145deg, #263941, #10191e);
+    color: #d4eaf0;
+    font-size: 28px;
+    box-shadow: 0 10px 24px #0008, inset 0 1px #ffffff26;
+}
+.gothic-header h1 {
+    font-size: 38px;
+    line-height: 1;
+    margin: 0 0 6px;
+    color: #f0f2ef;
+    text-shadow: 0 2px 18px #a2d2df28;
+}
+.gothic-header .subtitle {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 14px;
+    color: #a5b6bc;
+    text-transform: none;
+}
+.header-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #42535a;
+    background: #172127;
+    color: #d6e8ec;
+    padding: 10px 14px;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: 0 8px 18px #0006;
+}
+.header-link:hover { border-color: #82b7c5; color: white; }
+.connection-badge {
+    position: static;
+    margin: 0;
+    flex-shrink: 0;
+    background: #101719;
+    border-color: #38464a;
+    color: #bfcdcd;
+    padding: 10px 12px;
+}
+.divider { height: 1px; margin: 0 0 24px; background: #35444a; box-shadow: 0 1px 16px #8dd9ef2a; }
+.ornament { margin: 24px 0 0; color: #46585d; }
+
+.gothic-card {
+    border: 1px solid #344248;
+    border-radius: 4px;
+    background: linear-gradient(145deg, #151b1e 0%, #101416 100%);
+    box-shadow: 0 18px 34px #0008, inset 0 1px #ffffff0b;
+    overflow: visible;
+}
+.gothic-card::before, .gothic-card::after { display: none; }
+.card-header, .card-header-dark, .card-header-success {
+    min-height: 54px;
+    background: #1b252a;
+    border-bottom: 1px solid #3d5159;
+    color: #e2e9e8;
+    font-family: 'Cinzel', Georgia, serif;
+    font-size: 13px;
+    text-transform: none;
+    padding: 14px 18px;
+}
+.card-header-success { background: #172820; border-bottom-color: #37614e; }
+.card-body { padding: 18px; }
+.form-group label, .domain-card label, .gothic-modal label {
+    display: block;
+    margin-bottom: 8px;
+    color: #bacdd1;
+    font-family: 'Cinzel', Georgia, serif;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+}
+.form-hint { color: #91a3a6; font-family: 'EB Garamond', Georgia, serif; font-size: 13px; font-style: normal; line-height: 1.35; }
+.gothic-input, .gothic-select, .gothic-textarea {
+    border-color: #43545a;
+    border-radius: 3px;
+    background: #0e1519;
+    color: #f0f3f2;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 14px;
+}
+.gothic-input::placeholder { color: #819195; }
+.gothic-input:focus, .gothic-select:focus, .gothic-textarea:focus {
+    border-color: #9cc8d2;
+    background: #111b20;
+    box-shadow: 0 0 0 3px #72b8c229;
+}
+.gothic-btn, .gothic-btn-secondary, .gothic-btn-primary {
+    border-radius: 3px;
+    color: #eaf1f0;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: none;
+    background: linear-gradient(180deg, #26343a, #1a252a);
+    border-color: #52656a;
+    box-shadow: 0 5px 12px #0006, inset 0 1px #ffffff1a;
+}
+.gothic-btn:hover, .gothic-btn-secondary:hover {
+    background: #32454d;
+    border-color: #8aadb5;
+    box-shadow: 0 8px 16px #0008;
+}
+.gothic-btn-primary { background: linear-gradient(180deg, #b7d8e1, #88b6c2); color: #0c2029; border-color: #b8dce4; }
+.gothic-btn-primary:hover { background: #c6e4e9; border-color: #d9f2f4; color: #0c2029; }
+.gothic-btn-danger { background: #40282d; border-color: #814b53; }
+.gothic-btn-danger:hover { background: #63373e; border-color: #bb747d; }
+.gothic-btn-icon { border-radius: 3px; background: #172126; border-color: #3c4f55; color: #aec1c5; }
+.gothic-btn-icon:hover { background: #2a3c43; border-color: #82aab5; }
+.domain-input-row { display: flex; gap: 8px; }
+.domain-input-row .gothic-input { min-width: 0; }
+.domain-input-row .gothic-btn { width: auto; padding: 0 14px; flex-shrink: 0; }
+.domain-card .form-hint { margin-top: 10px; }
+.domain-setup-notice { margin-top: 14px; padding: 12px; border: 1px solid #426b63; background: #162721; color: #c6e9dc; font-size: 12px; line-height: 1.5; }
+.stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+.stat-item { background: transparent; border: 0; padding: 4px 8px; }
+.stat-item + .stat-item { border-left: 1px solid #3a4a4d; }
+.stat-number { font-size: 26px; color: #dbe8eb; }
+.stat-label { font-size: 10px; color: #9caeb0; }
+.filter-bar { background: #151e22; border-color: #34444b; }
+.gothic-table th { background: #1d282d; color: #b9cdd1; }
+.gothic-table td { border-color: #2d393d; }
+.gothic-table tr:hover td { background: #203037; }
+.password-cell { white-space: nowrap; }
+.password-cell .reveal-btn { width: 28px; height: 28px; margin-left: 7px; vertical-align: middle; }
+.password-value { font-family: Consolas, monospace; font-size: 12px; }
+.gothic-modal .modal-content { border-color: #5c7379; border-radius: 4px; background: #111a1e; box-shadow: 0 30px 90px #000c; }
+.gothic-modal .modal-header { background: #223138; border-color: #50646c; }
+.gothic-modal .modal-footer { background: #172226; border-color: #384b51; }
+.gothic-modal .modal-footer .gothic-btn { width: auto; }
+.password-target { color: #e3eef0; font-family: Consolas, monospace; overflow-wrap: anywhere; }
+.password-result { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px; background: #15261f; border: 1px solid #4a765c; }
+.password-result code { flex: 1; min-width: 0; color: #d7f3dc; overflow-wrap: anywhere; }
+.gothic-alert { border-radius: 3px; box-shadow: 0 10px 24px #0009; }
+.gothic-footer { border-color: #314148; color: #879b9c; }
+.gothic-footer a { color: #a7cbd2; }
+
+@media (max-width: 1050px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .left-column, .right-column { order: initial; }
+}
+@media (max-width: 680px) {
+    .gothic-container { padding: 12px; }
+    .gothic-header { flex-wrap: wrap; gap: 12px; }
+    .brand-lockup { width: 100%; }
+    .gothic-header h1 { font-size: 32px; }
+    .connection-badge { margin: 0; }
+    .header-link { flex: 1; justify-content: center; }
+    .card-header { gap: 8px; }
+    .domain-input-row { flex-direction: column; }
+    .domain-input-row .gothic-btn { min-height: 42px; }
+    .table-wrapper { overflow-x: auto; }
+    .gothic-table { min-width: 680px; }
+}

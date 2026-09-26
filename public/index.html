@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>⚜ Beget Mail Generator ⚜</title>
+    <title>Mail Codex — управление почтой</title>
     <!-- Gothic Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=EB+Garamond:wght@400;600&family=UnifrakturMaguntia&display=swap" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -14,8 +14,16 @@
     <div class="gothic-container">
         <!-- Header -->
         <header class="gothic-header">
-            <h1>⚜ Mail Codex ⚜</h1>
-            <p class="subtitle">Генератор почтовых ящиков Beget</p>
+            <div class="brand-lockup">
+                <span class="brand-sigil" aria-hidden="true">✠</span>
+                <div>
+                    <h1>Mail Codex</h1>
+                    <p class="subtitle">Управление почтовыми ящиками</p>
+                </div>
+            </div>
+            <a class="header-link" href="https://inbox.yozik.ru" target="_blank" rel="noopener noreferrer">
+                <i class="bi bi-envelope-open"></i> Открыть почту
+            </a>
             <div class="connection-badge" id="connectionStatus">
                 <span class="status-dot"></span>
                 <span class="status-text">Проверка...</span>
@@ -73,6 +81,21 @@
                     </div>
                 </div>
 
+                <div class="gothic-card domain-card">
+                    <div class="card-header"><span><i class="bi bi-globe2 header-icon"></i>Подключить домен</span></div>
+                    <div class="card-body">
+                        <form id="addDomainForm">
+                            <label for="newDomainInput">Домен</label>
+                            <div class="domain-input-row">
+                                <input class="gothic-input" id="newDomainInput" type="text" inputmode="url" placeholder="example.club" autocomplete="off" required>
+                                <button class="gothic-btn gothic-btn-secondary" id="addDomainBtn" type="submit">Добавить</button>
+                            </div>
+                        </form>
+                        <p class="form-hint">Домен будет подключён к Beget. DNS-записи у регистратора настраиваются отдельно.</p>
+                        <div id="domainSetupNotice" class="domain-setup-notice d-none" role="status"></div>
+                    </div>
+                </div>
+
                 <!-- Stats Card -->
                 <div class="gothic-card">
                     <div class="card-header">
@@ -88,6 +111,10 @@
                             <div class="stat-item">
                                 <div class="stat-number" id="todayCreated">0</div>
                                 <div class="stat-label">Сегодня</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="domainCount">0</div>
+                                <div class="stat-label">Доменов</div>
                             </div>
                         </div>
                     </div>
@@ -214,11 +241,34 @@
         <!-- Footer -->
         <footer class="gothic-footer">
             <span class="footer-icon">⚜</span>
-            Beget Mail Generator v1.0 | 
+            Mail Codex · Beget API |
             <a href="https://beget.com/ru/kb/api/funkczii-dlya-raboty-s-pochtoj" target="_blank">
                 Документация Beget API
             </a>
         </footer>
+    </div>
+
+    <div class="gothic-modal" id="passwordModal" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header" id="passwordModalTitle"><i class="bi bi-key header-icon"></i>Смена пароля</div>
+            <form id="passwordForm">
+                <div class="modal-body">
+                    <p class="password-target" id="passwordEmail"></p>
+                    <label for="newPasswordInput">Новый пароль</label>
+                    <input class="gothic-input" id="newPasswordInput" type="text" minlength="12" maxlength="128" autocomplete="new-password" placeholder="Оставьте пустым для генерации">
+                    <p class="form-hint">Если оставить поле пустым, надёжный пароль создаст сервер.</p>
+                    <div id="passwordResult" class="password-result d-none" role="status">
+                        <code id="passwordResultText"></code>
+                        <button class="gothic-btn-icon" id="copyPasswordResultBtn" type="button" title="Копировать email и пароль" aria-label="Копировать email и пароль"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="gothic-btn gothic-btn-secondary" id="cancelPasswordBtn" type="button">Закрыть</button>
+                    <button class="gothic-btn gothic-btn-primary" id="savePasswordBtn" type="submit">Сменить пароль</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Delete confirmation modal -->

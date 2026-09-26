@@ -7,6 +7,7 @@
 let mailboxes = [];
 let domains = [];
 let selectedMailboxes = new Set();
+let passwordMailbox = null;
 
 // DOM Elements
 const domainSelect = document.getElementById('domainSelect');
@@ -53,6 +54,33 @@ function setupEventListeners() {
     
     // Refresh domains
     document.getElementById('refreshDomainsBtn').addEventListener('click', loadDomains);
+    document.getElementById('addDomainForm').addEventListener('submit', addDomain);
+    document.getElementById('passwordForm').addEventListener('submit', changePassword);
+    document.getElementById('cancelPasswordBtn').addEventListener('click', hidePasswordModal);
+    document.getElementById('copyPasswordResultBtn').addEventListener('click', () => {
+        copyToClipboard(document.getElementById('passwordResultText').textContent);
+        showAlert('Данные скопированы', 'success');
+    });
+    document.getElementById('passwordModal').querySelector('.modal-overlay')
+        .addEventListener('click', hidePasswordModal);
+    mailboxesTable.addEventListener('click', event => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const mailbox = mailboxes.find(item => item.id === Number(button.dataset.id));
+        if (!mailbox) return;
+        if (button.dataset.action === 'copy') copyMailbox(mailbox.email, mailbox.password);
+        if (button.dataset.action === 'password') openPasswordModal(mailbox);
+        if (button.dataset.action === 'delete') deleteSingle(mailbox.domain, mailbox.mailbox_name);
+        if (button.dataset.action === 'reveal') {
+            const value = button.closest('tr').querySelector('.password-value');
+            const isHidden = value.dataset.hidden === 'true';
+            value.textContent = isHidden ? mailbox.password : '••••••••';
+            value.dataset.hidden = String(!isHidden);
+            button.setAttribute('aria-label', isHidden ? 'Скрыть пароль' : 'Показать пароль');
+            button.title = button.getAttribute('aria-label');
+            button.querySelector('i').className = isHidden ? 'bi bi-eye-slash' : 'bi bi-eye';
+        }
+    });
     
     // Load Beget mailboxes
     document.getElementById('loadBegetMailboxesBtn').addEventListener('click', loadBegetMailboxes);
@@ -133,6 +161,7 @@ async function checkConnection() {
 // Load domains from Beget
 async function loadDomains() {
     try {
+        const selectedDomain = domainSelect.value;
         domainSelect.innerHTML = '<option value="">Загрузка...</option>';
         domainSelect.disabled = true;
         
@@ -141,16 +170,13 @@ async function loadDomains() {
         
         if (data.success && data.domains) {
             domains = data.domains;
-            
+
             domainSelect.innerHTML = '<option value="">Выберите домен...</option>';
-            filterDomain.innerHTML = '<option value="">Все домены</option>';
-            
             domains.forEach(domain => {
-                domainSelect.innerHTML += `<option value="${domain.fqdn}">${domain.fqdn}</option>`;
-                filterDomain.innerHTML += `<option value="${domain.fqdn}">${domain.fqdn}</option>`;
+                domainSelect.add(new Option(domain.fqdn, domain.fqdn));
             });
-            
-            showAlert(`Загружено ${domains.length} доменов`, 'success');
+            if (domains.some(domain => domain.fqdn === selectedDomain)) domainSelect.value = selectedDomain;
+            document.getElementById('domainCount').textContent = domains.length;
         } else {
             domainSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
             showAlert(data.error || 'Не удалось загрузить домены', 'error');
@@ -160,6 +186,80 @@ async function loadDomains() {
         showAlert('Ошибка подключения к серверу', 'error');
     } finally {
         domainSelect.disabled = false;
+    }
+}
+
+async function addDomain(event) {
+    event.preventDefault();
+    const domain = document.getElementById('newDomainInput').value.trim().toLowerCase();
+    const button = document.getElementById('addDomainBtn');
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/domains', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Не удалось добавить домен');
+        await loadDomains();
+        domainSelect.value = domain;
+        document.getElementById('newDomainInput').value = '';
+        const notice = document.getElementById('domainSetupNotice');
+        notice.classList.remove('d-none');
+        notice.textContent = `${domain} подключён к Beget. Добавьте в Cloudflare MX: 10 mx1.beget.com и 20 mx2.beget.com. Затем настройте SPF, DKIM и DMARC по параметрам Beget.`;
+        showAlert(data.alreadyExists ? 'Домен уже подключён' : 'Домен добавлен', 'success');
+    } catch (error) {
+        showAlert(error.message, 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function openPasswordModal(mailbox) {
+    passwordMailbox = mailbox;
+    document.getElementById('passwordEmail').textContent = mailbox.email;
+    document.getElementById('newPasswordInput').value = '';
+    document.getElementById('passwordResult').classList.add('d-none');
+    document.getElementById('passwordModal').classList.add('show');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('newPasswordInput').focus();
+}
+
+function hidePasswordModal() {
+    document.getElementById('passwordModal').classList.remove('show');
+    document.getElementById('newPasswordInput').value = '';
+    document.getElementById('passwordResultText').textContent = '';
+    passwordMailbox = null;
+    document.body.style.overflow = '';
+}
+
+async function changePassword(event) {
+    event.preventDefault();
+    if (!passwordMailbox) return;
+    const button = document.getElementById('savePasswordBtn');
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/mailbox/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                domain: passwordMailbox.domain,
+                mailbox: passwordMailbox.mailbox_name,
+                password: document.getElementById('newPasswordInput').value
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Не удалось сменить пароль');
+        document.getElementById('passwordResultText').textContent = `${data.email}:${data.password}`;
+        document.getElementById('passwordResult').classList.remove('d-none');
+        document.getElementById('newPasswordInput').value = '';
+        await loadLocalMailboxes();
+        showAlert('Пароль изменён', 'success');
+    } catch (error) {
+        showAlert(error.message, 'error');
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -238,7 +338,7 @@ async function handleGenerate(e) {
         return;
     }
     
-    if (count < 1 || count > 50) {
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
         showAlert('Количество должно быть от 1 до 50', 'info');
         return;
     }
@@ -333,14 +433,15 @@ function renderMailboxes() {
             </td>
             <td class="email-cell">${escapeHtml(mailbox.email)}</td>
             <td class="password-cell">${mailbox.password
-                ? escapeHtml(mailbox.password)
+                ? `<span class="password-value" data-hidden="true">••••••••</span><button class="gothic-btn-icon reveal-btn" data-action="reveal" data-id="${mailbox.id}" title="Показать пароль" aria-label="Показать пароль"><i class="bi bi-eye"></i></button>`
                 : '<span title="Beget не возвращает пароли существующих ящиков">не сохранён</span>'}</td>
             <td class="date-cell">${formatDate(mailbox.created_at)}</td>
             <td class="actions-cell">
-                <button class="gothic-btn-icon" onclick="copyMailbox('${escapeInlineJsString(mailbox.email)}', '${escapeInlineJsString(mailbox.password || '')}')" title="${mailbox.password ? 'Копировать email и пароль' : 'Копировать email'}">
+                <button class="gothic-btn-icon" data-action="copy" data-id="${mailbox.id}" title="${mailbox.password ? 'Копировать email и пароль' : 'Копировать email'}" aria-label="Копировать данные ящика">
                     <i class="bi bi-clipboard"></i>
                 </button>
-                <button class="gothic-btn-icon gothic-btn-danger" onclick="deleteSingle('${escapeInlineJsString(mailbox.domain)}', '${escapeInlineJsString(mailbox.mailbox_name)}')" title="Удалить">
+                <button class="gothic-btn-icon" data-action="password" data-id="${mailbox.id}" title="Сменить пароль" aria-label="Сменить пароль"><i class="bi bi-key"></i></button>
+                <button class="gothic-btn-icon gothic-btn-danger" data-action="delete" data-id="${mailbox.id}" title="Удалить" aria-label="Удалить ящик">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -580,11 +681,18 @@ function showAlert(message, type = 'info') {
     
     const alert = document.createElement('div');
     alert.className = `gothic-alert gothic-alert-${type}`;
-    alert.innerHTML = `
-        <i class="bi ${icons[type]} alert-icon"></i>
-        <span class="alert-message">${message}</span>
-        <button class="alert-close" onclick="this.parentElement.remove()">×</button>
-    `;
+    const icon = document.createElement('i');
+    icon.className = `bi ${icons[type]} alert-icon`;
+    const text = document.createElement('span');
+    text.className = 'alert-message';
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.className = 'alert-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Закрыть уведомление');
+    close.textContent = '×';
+    close.addEventListener('click', () => alert.remove());
+    alert.append(icon, text, close);
     
     alertsContainer.appendChild(alert);
     
