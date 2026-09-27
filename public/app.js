@@ -207,7 +207,7 @@ async function addDomain(event) {
         document.getElementById('newDomainInput').value = '';
         const notice = document.getElementById('domainSetupNotice');
         notice.classList.remove('d-none');
-        notice.textContent = `${domain} подключён к Beget. Добавьте в Cloudflare MX: 10 mx1.beget.com и 20 mx2.beget.com. Затем настройте SPF, DKIM и DMARC по параметрам Beget.`;
+        notice.textContent = `${domain} подключён к Beget. NS-зона остаётся в Cloudflare: добавьте там MX 10 mx1.beget.com и MX 20 mx2.beget.com, затем TXT SPF по инструкции Beget.`;
         showAlert(data.alreadyExists ? 'Домен уже подключён' : 'Домен добавлен', 'success');
     } catch (error) {
         showAlert(error.message, 'error');
@@ -398,7 +398,7 @@ async function handleGenerate(e) {
         showAlert('Ошибка подключения к серверу', 'error');
     } finally {
         generateBtn.disabled = false;
-        generateBtn.innerHTML = '⚔ Генерировать';
+        generateBtn.innerHTML = '<i class="bi bi-stars" aria-hidden="true"></i> Генерировать';
         
         setTimeout(() => {
             progressContainer.classList.add('d-none');
@@ -417,7 +417,7 @@ function renderMailboxes() {
         mailboxesTable.innerHTML = `
             <tr>
                 <td colspan="5" class="empty-state">
-                    <div class="empty-icon">📜</div>
+                    <i class="bi bi-inbox empty-icon" aria-hidden="true"></i>
                     <p>${mailboxes.length === 0 ? 'Нет созданных почтовых ящиков' : 'Ничего не найдено'}</p>
                 </td>
             </tr>

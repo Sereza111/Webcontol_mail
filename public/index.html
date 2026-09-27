@@ -15,7 +15,7 @@
         <!-- Header -->
         <header class="gothic-header">
             <div class="brand-lockup">
-                <span class="brand-sigil" aria-hidden="true">✠</span>
+                <i class="bi bi-envelope-paper brand-sigil" aria-hidden="true"></i>
                 <div>
                     <h1>Mail Codex</h1>
                     <p class="subtitle">Управление почтовыми ящиками</p>
@@ -42,7 +42,7 @@
                 <!-- Generation Card -->
                 <div class="gothic-card">
                     <div class="card-header">
-                        <span class="header-icon">✠</span>
+                        <i class="bi bi-stars header-icon" aria-hidden="true"></i>
                         Генерация почтовых ящиков
                     </div>
                     <div class="card-body">
@@ -67,7 +67,7 @@
                                 <span class="form-hint">Максимум 50 за один раз</span>
                             </div>
                             <button type="submit" class="gothic-btn gothic-btn-primary" id="generateBtn">
-                                ⚔ Генерировать
+                                <i class="bi bi-stars" aria-hidden="true"></i> Генерировать
                             </button>
                         </form>
 
@@ -91,7 +91,7 @@
                                 <button class="gothic-btn gothic-btn-secondary" id="addDomainBtn" type="submit">Добавить</button>
                             </div>
                         </form>
-                        <p class="form-hint">Домен будет подключён к Beget. DNS-записи у регистратора настраиваются отдельно.</p>
+                        <p class="form-hint">Домен подключается к Beget, а NS-зона остаётся в Cloudflare. Для почты понадобятся только MX и TXT-записи.</p>
                         <div id="domainSetupNotice" class="domain-setup-notice d-none" role="status"></div>
                     </div>
                 </div>
@@ -99,7 +99,7 @@
                 <!-- Stats Card -->
                 <div class="gothic-card">
                     <div class="card-header">
-                        <span class="header-icon">☽</span>
+                        <i class="bi bi-bar-chart-line header-icon" aria-hidden="true"></i>
                         Статистика
                     </div>
                     <div class="card-body">
@@ -123,7 +123,7 @@
                 <!-- Actions Card -->
                 <div class="gothic-card">
                     <div class="card-header">
-                        <span class="header-icon">⚙</span>
+                        <i class="bi bi-sliders header-icon" aria-hidden="true"></i>
                         Действия
                     </div>
                     <div class="card-body actions-body">
@@ -152,7 +152,7 @@
                 <div class="gothic-card">
                     <div class="card-header card-header-dark">
                         <span>
-                            <span class="header-icon">📜</span>
+                            <i class="bi bi-inboxes header-icon" aria-hidden="true"></i>
                             Созданные почтовые ящики
                         </span>
                         <div class="header-actions">
@@ -197,7 +197,7 @@
                                 <tbody id="mailboxesTable">
                                     <tr>
                                         <td colspan="5" class="empty-state">
-                                            <div class="empty-icon">📜</div>
+                                            <i class="bi bi-inbox empty-icon" aria-hidden="true"></i>
                                             <p>Нет созданных почтовых ящиков</p>
                                         </td>
                                     </tr>
@@ -211,7 +211,7 @@
                 <div class="gothic-card" id="lastResultsCard" style="display: none;">
                     <div class="card-header card-header-success">
                         <span>
-                            <span class="header-icon">✓</span>
+                            <i class="bi bi-check2-circle header-icon" aria-hidden="true"></i>
                             Результаты последней генерации
                         </span>
                         <button class="gothic-btn-icon gothic-btn-light" id="copyLastResultsBtn" title="Копировать все">
@@ -236,11 +236,11 @@
             </div>
         </div>
 
-        <div class="ornament">✠ ✠ ✠</div>
+        <div class="ornament" aria-hidden="true"></div>
 
         <!-- Footer -->
         <footer class="gothic-footer">
-            <span class="footer-icon">⚜</span>
+            <i class="bi bi-feather footer-icon" aria-hidden="true"></i>
             Mail Codex · Beget API |
             <a href="https://beget.com/ru/kb/api/funkczii-dlya-raboty-s-pochtoj" target="_blank">
                 Документация Beget API
@@ -276,7 +276,7 @@
         <div class="modal-overlay"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <span class="header-icon">⚠</span>
+                <i class="bi bi-exclamation-triangle header-icon" aria-hidden="true"></i>
                 Подтверждение удаления
             </div>
             <div class="modal-body">
