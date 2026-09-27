@@ -352,7 +352,13 @@ async function queryRdapExpiry(domain) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
     try {
-        const response = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, { signal: controller.signal });
+        const response = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+            signal: controller.signal,
+            headers: {
+                'Accept': 'application/rdap+json, application/json',
+                'User-Agent': 'Mail-Codex-Domain-Monitor/1.0'
+            }
+        });
         if (!response.ok) return { expiresAt: null, registeredAt: null };
         const payload = await response.json();
         const events = Array.isArray(payload.events) ? payload.events : [];
