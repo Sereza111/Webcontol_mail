@@ -45,6 +45,7 @@ db.exec(`
     CREATE TABLE IF NOT EXISTS domain_meta (
         domain TEXT PRIMARY KEY,
         expires_at TEXT,
+        registered_at TEXT,
         nameservers TEXT NOT NULL DEFAULT '[]',
         mx_records TEXT NOT NULL DEFAULT '[]',
         remote_mailbox_count INTEGER,
@@ -67,6 +68,7 @@ db.exec(`
         expires_at DATETIME NOT NULL
     );
 `);
+ensureColumn('domain_meta', 'registered_at', 'TEXT');
 db.prepare(`UPDATE mailboxes SET last_activity_at = created_at
     WHERE last_activity_at IS NULL AND created_at IS NOT NULL`).run();
 
@@ -351,12 +353,16 @@ async function queryRdapExpiry(domain) {
     const timeout = setTimeout(() => controller.abort(), 7000);
     try {
         const response = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, { signal: controller.signal });
-        if (!response.ok) return null;
+        if (!response.ok) return { expiresAt: null, registeredAt: null };
         const payload = await response.json();
-        const event = (payload.events || []).find(item => ['expiration', 'expiry'].includes(item.eventAction));
-        return event?.eventDate || null;
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        const findEvent = actions => events.find(item => actions.includes(String(item.eventAction || '').toLowerCase()));
+        return {
+            expiresAt: findEvent(['expiration', 'expiry'])?.eventDate || null,
+            registeredAt: findEvent(['registration', 'registered'])?.eventDate || null
+        };
     } catch {
-        return null;
+        return { expiresAt: null, registeredAt: null };
     } finally {
         clearTimeout(timeout);
     }
@@ -365,21 +371,22 @@ async function queryRdapExpiry(domain) {
 async function inspectDomain(domain, force = false) {
     const stored = readStoredDomainMeta(domain);
     const checkedAt = stored?.checked_at ? new Date(stored.checked_at).getTime() : 0;
-    if (!force && stored && Number.isFinite(checkedAt) && Date.now() - checkedAt < 6 * 60 * 60 * 1000) {
-        return { domain, expiresAt: stored.expires_at, nameservers: stored.nameservers, mxRecords: stored.mxRecords, ...domainStatus({ expiresAt: stored.expires_at }) };
+    if (!force && stored && stored.expires_at && Number.isFinite(checkedAt) && Date.now() - checkedAt < 6 * 60 * 60 * 1000) {
+        return { domain, expiresAt: stored.expires_at, registeredAt: stored.registered_at, nameservers: stored.nameservers, mxRecords: stored.mxRecords, ...domainStatus({ expiresAt: stored.expires_at }) };
     }
 
-    const [nameservers, mxRecords, expiresAt] = await Promise.all([
+    const [nameservers, mxRecords, rdap] = await Promise.all([
         dns.resolveNs(domain).catch(() => []),
         dns.resolveMx(domain).then(records => records.sort((a, b) => a.priority - b.priority).map(record => ({ exchange: record.exchange, priority: record.priority }))).catch(() => []),
         queryRdapExpiry(domain)
     ]);
-    db.prepare(`INSERT INTO domain_meta (domain, expires_at, nameservers, mx_records, checked_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    db.prepare(`INSERT INTO domain_meta (domain, expires_at, registered_at, nameservers, mx_records, checked_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(domain) DO UPDATE SET expires_at = excluded.expires_at,
+            registered_at = excluded.registered_at,
             nameservers = excluded.nameservers, mx_records = excluded.mx_records,
-            checked_at = CURRENT_TIMESTAMP`).run(domain, expiresAt, JSON.stringify(nameservers), JSON.stringify(mxRecords));
-    return { domain, expiresAt, nameservers, mxRecords, ...domainStatus({ expiresAt }) };
+            checked_at = CURRENT_TIMESTAMP`).run(domain, rdap.expiresAt, rdap.registeredAt, JSON.stringify(nameservers), JSON.stringify(mxRecords));
+    return { domain, expiresAt: rdap.expiresAt, registeredAt: rdap.registeredAt, nameservers, mxRecords, ...domainStatus({ expiresAt: rdap.expiresAt }) };
 }
 
 async function getDomainHealth(force = false) {

@@ -46,6 +46,7 @@ const authGate = document.getElementById('authGate');
 const appShell = document.getElementById('appShell');
 const authForm = document.getElementById('authForm');
 const authGateMessage = document.getElementById('authGateMessage');
+const adminTab = document.getElementById('adminTab');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -98,6 +99,7 @@ function openGenerator(role) {
     currentRole = role;
     authGate.classList.add('d-none');
     appShell.classList.remove('d-none');
+    adminTab.classList.toggle('d-none', role !== 'admin');
     document.getElementById('adminPanel').classList.toggle('d-none', role !== 'admin');
     checkConnection();
     loadDomains();
@@ -108,12 +110,16 @@ function openGenerator(role) {
         loadInactiveMailboxes();
         loadInvitations();
     }
+    setPanel('generatorPanel');
 }
 
 // Setup event listeners
 function setupEventListeners() {
     if (appInitialized) return;
     appInitialized = true;
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+        tab.addEventListener('click', () => setPanel(tab.dataset.panel));
+    });
     // Generate form
     generateForm.addEventListener('submit', handleGenerate);
     
@@ -195,6 +201,17 @@ function setupEventListeners() {
         copyToClipboard(lastResultsText.value);
         showAlert('Скопировано в буфер обмена!', 'success');
     });
+}
+
+function setPanel(panelId) {
+    if (panelId === 'adminPanel' && currentRole !== 'admin') panelId = 'generatorPanel';
+    document.querySelectorAll('.panel-view').forEach(panel => {
+        panel.classList.toggle('d-none', panel.id !== panelId);
+    });
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.panel === panelId);
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // Modal functions
@@ -294,10 +311,14 @@ function renderDomainHealth(items) {
             : 'MX не найден';
         const nsLabel = item.nameservers?.length ? item.nameservers.join(', ') : 'NS не найден';
         const mailLabel = item.remoteError ? 'Beget: ошибка проверки' : `Beget: ${item.mailboxCount} ящ.`;
+        const expiryDate = item.expiresAt ? new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(item.expiresAt)) : 'не получена через RDAP';
+        const registeredDate = item.registeredAt ? new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(item.registeredAt)) : '—';
         return `
             <article class="domain-health-row">
                 <div class="health-heading"><strong>${escapeHtml(item.fqdn)}</strong><span class="health-pill ${expiryClass}">${escapeHtml(expiryLabel)}</span></div>
                 <div class="health-meta"><span><i class="bi bi-diagram-3"></i>${escapeHtml(item.dnsProvider)}</span><span><i class="bi bi-inboxes"></i>${escapeHtml(mailLabel)}</span></div>
+                <div class="health-detail"><span>Регистрация</span><code>${escapeHtml(registeredDate)}</code></div>
+                <div class="health-detail"><span>Оплата до</span><code>${escapeHtml(expiryDate)}</code></div>
                 <div class="health-detail"><span>NS</span><code>${escapeHtml(nsLabel)}</code></div>
                 <div class="health-detail"><span>MX</span><code>${escapeHtml(mxLabel)}</code></div>
                 ${item.cloudflare ? '<p class="health-note"><i class="bi bi-info-circle"></i> Cloudflare остаётся DNS-провайдером. Делегирование NS в Beget не требуется: добавьте MX/TXT в этой зоне.</p>' : ''}

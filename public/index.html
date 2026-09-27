@@ -50,7 +50,13 @@
         <!-- Alerts container -->
         <div id="alertsContainer"></div>
 
+        <nav class="panel-tabs" id="panelTabs" aria-label="Разделы панели">
+            <button type="button" class="panel-tab active" data-panel="generatorPanel"><i class="bi bi-stars"></i><span>Генератор</span></button>
+            <button type="button" class="panel-tab d-none" id="adminTab" data-panel="adminPanel"><i class="bi bi-shield-check"></i><span>Администрирование</span></button>
+        </nav>
+
         <!-- Main content -->
+        <section class="panel-view" id="generatorPanel">
         <div class="main-grid">
             <!-- Left column - Generation form -->
             <div class="left-column">
@@ -93,6 +99,32 @@
                             </div>
                             <p class="progress-text" id="progressText">Создание почтовых ящиков...</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Last generation results -->
+                <div class="gothic-card last-results-card" id="lastResultsCard" style="display: none;">
+                    <div class="card-header card-header-success">
+                        <span>
+                            <i class="bi bi-check2-circle header-icon" aria-hidden="true"></i>
+                            Результаты последней генерации
+                        </span>
+                        <button class="gothic-btn-icon gothic-btn-light" id="copyLastResultsBtn" title="Копировать все" aria-label="Копировать все">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="results-stats">
+                            <div class="result-success">
+                                <i class="bi bi-check-circle"></i>
+                                Успешно создано: <strong id="lastSuccessCount">0</strong>
+                            </div>
+                            <div class="result-error">
+                                <i class="bi bi-x-circle"></i>
+                                Ошибок: <strong id="lastErrorCount">0</strong>
+                            </div>
+                        </div>
+                        <textarea class="gothic-textarea" id="lastResultsText" rows="5" readonly placeholder="email:password"></textarea>
                     </div>
                 </div>
 
@@ -232,34 +264,11 @@
                     </div>
                 </div>
 
-                <!-- Last generation results -->
-                <div class="gothic-card" id="lastResultsCard" style="display: none;">
-                    <div class="card-header card-header-success">
-                        <span>
-                            <i class="bi bi-check2-circle header-icon" aria-hidden="true"></i>
-                            Результаты последней генерации
-                        </span>
-                        <button class="gothic-btn-icon gothic-btn-light" id="copyLastResultsBtn" title="Копировать все">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div class="results-stats">
-                            <div class="result-success">
-                                <i class="bi bi-check-circle"></i>
-                                Успешно создано: <strong id="lastSuccessCount">0</strong>
-                            </div>
-                            <div class="result-error">
-                                <i class="bi bi-x-circle"></i>
-                                Ошибок: <strong id="lastErrorCount">0</strong>
-                            </div>
-                        </div>
-                        <textarea class="gothic-textarea" id="lastResultsText" 
-                                  rows="5" readonly placeholder="email:password"></textarea>
-                    </div>
-                </div>
+            </div>
+        </div>
+        </section>
 
-                <section class="gothic-card admin-panel d-none" id="adminPanel">
+        <section class="gothic-card admin-panel panel-view d-none" id="adminPanel">
                     <div class="card-header card-header-dark">
                         <span><i class="bi bi-shield-check header-icon"></i>Панель управления</span>
                         <span class="admin-role">ADMIN</span>
@@ -291,9 +300,7 @@
                             <div id="inviteList" class="invite-list"></div>
                         </div>
                     </div>
-                </section>
-            </div>
-        </div>
+        </section>
 
         <div class="ornament" aria-hidden="true"></div>
 
