@@ -8,6 +8,10 @@ let mailboxes = [];
 let domains = [];
 let selectedMailboxes = new Set();
 let passwordMailbox = null;
+let currentRole = null;
+let inactiveMailboxes = [];
+let inactiveSelection = new Set();
+let appInitialized = false;
 
 // DOM Elements
 const domainSelect = document.getElementById('domainSelect');
@@ -38,22 +42,84 @@ const lastErrorCount = document.getElementById('lastErrorCount');
 const deleteModal = document.getElementById('deleteModal');
 const deleteCount = document.getElementById('deleteCount');
 const deleteModalMessage = document.getElementById('deleteModalMessage');
+const authGate = document.getElementById('authGate');
+const appShell = document.getElementById('appShell');
+const authForm = document.getElementById('authForm');
+const authGateMessage = document.getElementById('authGateMessage');
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    setupAuthListeners();
+    await checkAuth();
+});
+
+function setupAuthListeners() {
+    authForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const button = authForm.querySelector('button');
+        button.disabled = true;
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: document.getElementById('inviteCodeInput').value })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Не удалось войти');
+            document.getElementById('inviteCodeInput').value = '';
+            openGenerator(data.role);
+        } catch (error) {
+            authGateMessage.textContent = error.message;
+            authGateMessage.classList.add('auth-error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        appShell.classList.add('d-none');
+        authGate.classList.remove('d-none');
+        currentRole = null;
+    });
+}
+
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/auth/status');
+        const data = await response.json();
+        if (data.authenticated) openGenerator(data.role);
+    } catch {
+        authGateMessage.textContent = 'Сервис авторизации недоступен';
+        authGateMessage.classList.add('auth-error');
+    }
+}
+
+function openGenerator(role) {
+    currentRole = role;
+    authGate.classList.add('d-none');
+    appShell.classList.remove('d-none');
+    document.getElementById('adminPanel').classList.toggle('d-none', role !== 'admin');
     checkConnection();
     loadDomains();
     loadLocalMailboxes();
+    loadDomainHealth();
     setupEventListeners();
-});
+    if (role === 'admin') {
+        loadInactiveMailboxes();
+        loadInvitations();
+    }
+}
 
 // Setup event listeners
 function setupEventListeners() {
+    if (appInitialized) return;
+    appInitialized = true;
     // Generate form
     generateForm.addEventListener('submit', handleGenerate);
     
     // Refresh domains
     document.getElementById('refreshDomainsBtn').addEventListener('click', loadDomains);
+    document.getElementById('refreshHealthBtn').addEventListener('click', () => loadDomainHealth(true));
     document.getElementById('addDomainForm').addEventListener('submit', addDomain);
     document.getElementById('passwordForm').addEventListener('submit', changePassword);
     document.getElementById('cancelPasswordBtn').addEventListener('click', hidePasswordModal);
@@ -117,6 +183,12 @@ function setupEventListeners() {
     
     // Copy selected
     copySelectedBtn.addEventListener('click', copySelected);
+
+    document.getElementById('refreshInactiveBtn').addEventListener('click', loadInactiveMailboxes);
+    document.getElementById('inactiveDaysInput').addEventListener('change', loadInactiveMailboxes);
+    document.getElementById('checkInactiveAll').addEventListener('change', toggleInactiveSelection);
+    document.getElementById('deleteInactiveBtn').addEventListener('click', deleteInactiveMailboxes);
+    document.getElementById('createInviteBtn').addEventListener('click', createInvitation);
     
     // Copy last results
     document.getElementById('copyLastResultsBtn').addEventListener('click', () => {
@@ -187,6 +259,173 @@ async function loadDomains() {
     } finally {
         domainSelect.disabled = false;
     }
+}
+
+async function loadDomainHealth(force = false) {
+    const container = document.getElementById('domainHealthList');
+    container.innerHTML = '<p class="form-hint">Проверяем DNS, срок регистрации и ящики...</p>';
+    try {
+        const response = await fetch(`/api/domain-health${force ? '?refresh=1' : ''}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Не удалось проверить домены');
+        renderDomainHealth(data.domains || []);
+    } catch (error) {
+        container.innerHTML = `<p class="health-error">${escapeHtml(error.message)}</p>`;
+    }
+}
+
+function renderDomainHealth(items) {
+    const container = document.getElementById('domainHealthList');
+    if (!items.length) {
+        container.innerHTML = '<p class="form-hint">В аккаунте Beget пока нет подключённых доменов.</p>';
+        return;
+    }
+    container.innerHTML = items.map(item => {
+        const expiryLabel = item.expiryState === 'expired'
+            ? 'домен истёк'
+            : item.expiryState === 'warning'
+                ? `осталось ${item.daysRemaining} дн.`
+                : item.daysRemaining === null
+                    ? 'срок не определён'
+                    : `осталось ${item.daysRemaining} дн.`;
+        const expiryClass = item.expiryState === 'expired' ? 'health-expired' : item.expiryState === 'warning' ? 'health-warning' : '';
+        const mxLabel = item.mxRecords?.length
+            ? item.mxRecords.map(record => `${record.priority} ${record.exchange}`).join(', ')
+            : 'MX не найден';
+        const nsLabel = item.nameservers?.length ? item.nameservers.join(', ') : 'NS не найден';
+        const mailLabel = item.remoteError ? 'Beget: ошибка проверки' : `Beget: ${item.mailboxCount} ящ.`;
+        return `
+            <article class="domain-health-row">
+                <div class="health-heading"><strong>${escapeHtml(item.fqdn)}</strong><span class="health-pill ${expiryClass}">${escapeHtml(expiryLabel)}</span></div>
+                <div class="health-meta"><span><i class="bi bi-diagram-3"></i>${escapeHtml(item.dnsProvider)}</span><span><i class="bi bi-inboxes"></i>${escapeHtml(mailLabel)}</span></div>
+                <div class="health-detail"><span>NS</span><code>${escapeHtml(nsLabel)}</code></div>
+                <div class="health-detail"><span>MX</span><code>${escapeHtml(mxLabel)}</code></div>
+                ${item.cloudflare ? '<p class="health-note"><i class="bi bi-info-circle"></i> Cloudflare остаётся DNS-провайдером. Делегирование NS в Beget не требуется: добавьте MX/TXT в этой зоне.</p>' : ''}
+                ${item.expiryState === 'warning' || item.expiryState === 'expired' ? '<p class="health-note health-warning"><i class="bi bi-exclamation-triangle"></i> Срок домена подходит к концу. Перенесите нужные данные ящиков заранее.</p>' : ''}
+            </article>`;
+    }).join('');
+}
+
+async function loadInactiveMailboxes() {
+    const daysInput = document.getElementById('inactiveDaysInput');
+    const days = Math.min(3650, Math.max(1, Number(daysInput.value) || 30));
+    daysInput.value = days;
+    const body = document.getElementById('inactiveTable');
+    body.innerHTML = '<tr><td colspan="4" class="empty-state"><i class="bi bi-hourglass empty-icon"></i><p>Загрузка...</p></td></tr>';
+    try {
+        const response = await fetch(`/api/admin/inactive-mailboxes?days=${days}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Не удалось загрузить список');
+        inactiveMailboxes = data.mailboxes || [];
+        inactiveSelection = new Set();
+        document.getElementById('checkInactiveAll').checked = false;
+        renderInactiveMailboxes(days);
+    } catch (error) {
+        body.innerHTML = `<tr><td colspan="4" class="empty-state"><p class="health-error">${escapeHtml(error.message)}</p></td></tr>`;
+    }
+}
+
+function renderInactiveMailboxes(days) {
+    const body = document.getElementById('inactiveTable');
+    const summary = document.getElementById('maintenanceSummary');
+    summary.textContent = inactiveMailboxes.length
+        ? `${inactiveMailboxes.length} ящиков не использовались ${days}+ дней`
+        : `Нет ящиков без активности ${days}+ дней`;
+    if (!inactiveMailboxes.length) {
+        body.innerHTML = '<tr><td colspan="4" class="empty-state"><i class="bi bi-check2-circle empty-icon"></i><p>Список чист</p></td></tr>';
+        document.getElementById('deleteInactiveBtn').disabled = true;
+        return;
+    }
+    body.innerHTML = inactiveMailboxes.map(mailbox => `
+        <tr data-id="${mailbox.id}">
+            <td><input type="checkbox" class="gothic-checkbox inactive-check" data-id="${mailbox.id}" ${inactiveSelection.has(mailbox.id) ? 'checked' : ''}></td>
+            <td class="email-cell">${escapeHtml(mailbox.email)}</td>
+            <td class="date-cell">${escapeHtml(formatDate(mailbox.last_activity_at))}</td>
+            <td class="date-cell">${escapeHtml(String(mailbox.days_inactive))} дн.</td>
+        </tr>`).join('');
+    body.querySelectorAll('.inactive-check').forEach(input => input.addEventListener('change', event => {
+        const id = Number(event.target.dataset.id);
+        if (event.target.checked) inactiveSelection.add(id);
+        else inactiveSelection.delete(id);
+        updateInactiveActions();
+    }));
+    updateInactiveActions();
+}
+
+function toggleInactiveSelection() {
+    const checked = document.getElementById('checkInactiveAll').checked;
+    inactiveSelection = checked ? new Set(inactiveMailboxes.map(item => item.id)) : new Set();
+    document.querySelectorAll('.inactive-check').forEach(input => { input.checked = checked; });
+    updateInactiveActions();
+}
+
+function updateInactiveActions() {
+    document.getElementById('deleteInactiveBtn').disabled = inactiveSelection.size === 0;
+}
+
+async function deleteInactiveMailboxes() {
+    const selected = inactiveMailboxes.filter(item => inactiveSelection.has(item.id));
+    if (!selected.length || !confirm(`Удалить ${selected.length} неактивных ящиков с Beget?`)) return;
+    const button = document.getElementById('deleteInactiveBtn');
+    button.disabled = true;
+    try {
+        const response = await fetch('/api/admin/inactive-mailboxes/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mailboxes: selected.map(item => ({ domain: item.domain, mailbox: item.mailbox_name })) })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Не удалось удалить ящики');
+        showAlert(`Удалено: ${data.total}. Ошибок: ${data.failed}.`, data.failed ? 'error' : 'success');
+        await Promise.all([loadInactiveMailboxes(), loadLocalMailboxes(), loadDomainHealth()]);
+    } catch (error) {
+        showAlert(error.message, 'error');
+        updateInactiveActions();
+    }
+}
+
+async function loadInvitations() {
+    const container = document.getElementById('inviteList');
+    try {
+        const response = await fetch('/api/admin/invitations');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Не удалось загрузить приглашения');
+        container.innerHTML = (data.invitations || []).map(item => `
+            <div class="invite-row ${item.revoked_at ? 'is-revoked' : ''}">
+                <span><strong>${escapeHtml(item.label || (item.role === 'admin' ? 'Администратор' : 'Пользователь'))}</strong><small>${item.revoked_at ? 'отозвано' : item.last_used_at ? `использовано ${escapeHtml(formatDate(item.last_used_at))}` : 'не использовано'}</small></span>
+                ${item.revoked_at ? '' : `<button class="gothic-btn-icon gothic-btn-danger revoke-invite" data-id="${item.id}" title="Отозвать" aria-label="Отозвать"><i class="bi bi-x-lg"></i></button>`}
+            </div>`).join('') || '<p class="form-hint">Приглашений пока нет.</p>';
+        container.querySelectorAll('.revoke-invite').forEach(button => button.addEventListener('click', () => revokeInvitation(button.dataset.id)));
+    } catch (error) {
+        container.innerHTML = `<p class="health-error">${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function createInvitation() {
+    const label = window.prompt('Метка приглашения (необязательно):', '') ?? '';
+    try {
+        const response = await fetch('/api/admin/invitations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'user', label })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Не удалось создать приглашение');
+        await copyToClipboard(data.code);
+        showAlert(`Код создан и скопирован: ${data.code}`, 'success');
+        loadInvitations();
+    } catch (error) {
+        showAlert(error.message, 'error');
+    }
+}
+
+async function revokeInvitation(id) {
+    if (!confirm('Отозвать это приглашение? Уже открытые сессии останутся действительными до истечения срока.')) return;
+    const response = await fetch(`/api/admin/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const data = await response.json();
+    if (!response.ok) return showAlert(data.error || 'Не удалось отозвать приглашение', 'error');
+    loadInvitations();
+    showAlert('Приглашение отозвано', 'success');
 }
 
 async function addDomain(event) {
@@ -660,7 +899,7 @@ async function exportAll() {
 // Copy to clipboard helper
 function copyToClipboard(text) {
     if (navigator.clipboard) {
-        navigator.clipboard.writeText(text);
+        return navigator.clipboard.writeText(text);
     } else {
         const textarea = document.createElement('textarea');
         textarea.value = text;
@@ -668,6 +907,7 @@ function copyToClipboard(text) {
         textarea.select();
         document.execCommand('copy');
         document.body.removeChild(textarea);
+        return Promise.resolve();
     }
 }
 

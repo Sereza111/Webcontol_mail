@@ -11,7 +11,19 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="gothic-container">
+    <section id="authGate" class="auth-gate">
+        <div class="auth-gate-mark"><i class="bi bi-shield-lock"></i></div>
+        <span class="eyebrow">MAIL CODEX / ДОСТУП</span>
+        <h1>Вход в генератор</h1>
+        <p id="authGateMessage">Введите код приглашения, который выдал администратор.</p>
+        <form id="authForm" class="auth-form">
+            <label for="inviteCodeInput">Код приглашения</label>
+            <input id="inviteCodeInput" class="gothic-input" type="password" autocomplete="one-time-code" required>
+            <button class="gothic-btn gothic-btn-primary" type="submit"><i class="bi bi-arrow-right-circle"></i> Войти</button>
+        </form>
+    </section>
+
+    <div class="gothic-container d-none" id="appShell">
         <!-- Header -->
         <header class="gothic-header">
             <div class="brand-lockup">
@@ -28,6 +40,9 @@
                 <span class="status-dot"></span>
                 <span class="status-text">Проверка...</span>
             </div>
+            <button class="gothic-btn-icon header-logout" id="logoutBtn" title="Выйти" aria-label="Выйти">
+                <i class="bi bi-box-arrow-right"></i>
+            </button>
         </header>
 
         <div class="divider"></div>
@@ -93,6 +108,16 @@
                         </form>
                         <p class="form-hint">Домен подключается к Beget, а NS-зона остаётся в Cloudflare. Для почты понадобятся только MX и TXT-записи.</p>
                         <div id="domainSetupNotice" class="domain-setup-notice d-none" role="status"></div>
+                    </div>
+                </div>
+
+                <div class="gothic-card domain-health-card">
+                    <div class="card-header">
+                        <span><i class="bi bi-broadcast-pin header-icon"></i>Состояние доменов</span>
+                        <button class="gothic-btn-icon" id="refreshHealthBtn" title="Проверить домены" aria-label="Проверить домены"><i class="bi bi-arrow-clockwise"></i></button>
+                    </div>
+                    <div class="card-body" id="domainHealthList">
+                        <p class="form-hint">Проверяем DNS, срок регистрации и ящики...</p>
                     </div>
                 </div>
 
@@ -233,6 +258,40 @@
                                   rows="5" readonly placeholder="email:password"></textarea>
                     </div>
                 </div>
+
+                <section class="gothic-card admin-panel d-none" id="adminPanel">
+                    <div class="card-header card-header-dark">
+                        <span><i class="bi bi-shield-check header-icon"></i>Панель управления</span>
+                        <span class="admin-role">ADMIN</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="admin-toolbar">
+                            <div>
+                                <strong>Неактивные ящики</strong>
+                                <p class="form-hint">Список ящиков без активности дольше выбранного срока.</p>
+                            </div>
+                            <div class="admin-filter">
+                                <label for="inactiveDaysInput">Дней</label>
+                                <input id="inactiveDaysInput" class="gothic-input gothic-input-sm" type="number" min="1" max="3650" value="30">
+                                <button class="gothic-btn-icon" id="refreshInactiveBtn" title="Обновить список" aria-label="Обновить список"><i class="bi bi-arrow-clockwise"></i></button>
+                            </div>
+                        </div>
+                        <div class="maintenance-summary" id="maintenanceSummary"></div>
+                        <div class="table-wrapper maintenance-table-wrapper">
+                            <table class="gothic-table maintenance-table">
+                                <thead><tr><th class="th-checkbox"><input type="checkbox" class="gothic-checkbox" id="checkInactiveAll"></th><th>Email</th><th>Последняя активность</th><th>Неактивен</th></tr></thead>
+                                <tbody id="inactiveTable"><tr><td colspan="4" class="empty-state"><i class="bi bi-hourglass empty-icon"></i><p>Загрузка...</p></td></tr></tbody>
+                            </table>
+                        </div>
+                        <div class="admin-actions">
+                            <button class="gothic-btn gothic-btn-danger" id="deleteInactiveBtn" disabled><i class="bi bi-trash"></i> Удалить выбранные</button>
+                        </div>
+                        <div class="invite-section">
+                            <div class="admin-toolbar"><div><strong>Приглашения</strong><p class="form-hint">Выдавайте доступ отдельным пользователям и отзывать его.</p></div><button class="gothic-btn gothic-btn-secondary" id="createInviteBtn"><i class="bi bi-plus-circle"></i> Новое</button></div>
+                            <div id="inviteList" class="invite-list"></div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
 

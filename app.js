@@ -4,6 +4,7 @@ const axios = require('axios');
 const Database = require('better-sqlite3');
 const crypto = require('crypto');
 const path = require('path');
+const dns = require('dns').promises;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,9 +28,106 @@ db.exec(`
         password TEXT NOT NULL,
         domain TEXT NOT NULL,
         mailbox_name TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_activity_at DATETIME
     )
 `);
+
+function ensureColumn(table, column, definition) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!columns.some(item => item.name === column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+}
+
+ensureColumn('mailboxes', 'last_activity_at', 'DATETIME');
+db.exec(`
+    CREATE TABLE IF NOT EXISTS domain_meta (
+        domain TEXT PRIMARY KEY,
+        expires_at TEXT,
+        nameservers TEXT NOT NULL DEFAULT '[]',
+        mx_records TEXT NOT NULL DEFAULT '[]',
+        remote_mailbox_count INTEGER,
+        checked_at DATETIME,
+        remote_checked_at DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS invitations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_hash TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL DEFAULT 'user',
+        label TEXT NOT NULL DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_used_at DATETIME,
+        revoked_at DATETIME
+    );
+    CREATE TABLE IF NOT EXISTS generator_sessions (
+        token_hash TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL
+    );
+`);
+db.prepare(`UPDATE mailboxes SET last_activity_at = created_at
+    WHERE last_activity_at IS NULL AND created_at IS NOT NULL`).run();
+
+const SESSION_COOKIE = 'generator_session';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const ACTIVITY_SYNC_TOKEN = process.env.GENERATOR_ACTIVITY_TOKEN || '';
+const AUTH_ENABLED = process.env.GENERATOR_AUTH_ENABLED !== 'false';
+const failedLogins = new Map();
+
+function hashSecret(value) {
+    return crypto.createHash('sha256').update(String(value)).digest('hex');
+}
+
+function secretsEqual(left, right) {
+    const a = Buffer.from(String(left));
+    const b = Buffer.from(String(right));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function seedInvitations() {
+    const insert = db.prepare('INSERT OR IGNORE INTO invitations (code_hash, role, label) VALUES (?, ?, ?)');
+    const seeds = [];
+    if (process.env.GENERATOR_ADMIN_INVITE) {
+        seeds.push([process.env.GENERATOR_ADMIN_INVITE, 'admin', 'Администратор']);
+    }
+    for (const code of String(process.env.GENERATOR_INVITES || '').split(',')) {
+        const value = code.trim();
+        if (value) seeds.push([value, 'user', 'Приглашение']);
+    }
+    for (const [code, role, label] of seeds) insert.run(hashSecret(code), role, label);
+}
+
+seedInvitations();
+
+function readSession(req) {
+    const cookieHeader = req.headers.cookie || '';
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
+    if (!match) return null;
+    const tokenHash = hashSecret(decodeURIComponent(match[1]));
+    const session = db.prepare(`SELECT role FROM generator_sessions
+        WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP`).get(tokenHash);
+    return session || null;
+}
+
+function requireAuth(req, res, next) {
+    if (!AUTH_ENABLED) {
+        req.auth = { role: 'admin' };
+        return next();
+    }
+    const session = readSession(req);
+    if (!session) return res.status(401).json({ error: 'Требуется приглашение' });
+    req.auth = session;
+    next();
+}
+
+function requireAdmin(req, res, next) {
+    if (!req.auth || req.auth.role !== 'admin') {
+        return res.status(403).json({ error: 'Нужны права администратора' });
+    }
+    next();
+}
 
 // Rate limiter for Beget API (max 60 requests per minute)
 let requestQueue = [];
@@ -209,6 +307,113 @@ function getBegetMailboxNames(result, domain) {
     return mailboxNames;
 }
 
+async function fetchBegetDomains() {
+    const result = await rateLimitedRequest(() => begetApiCall('domain/getList'));
+    const requestOk = result?.status === 'success';
+    const apiOk = !result?.answer?.status || result.answer.status === 'success';
+    if (!requestOk || !apiOk) {
+        const error = new Error(extractBegetError(result, 'Failed to get domains'));
+        error.statusCode = 502;
+        throw error;
+    }
+    return (Array.isArray(result?.answer?.result) ? result.answer.result : [])
+        .filter(item => validDomain(item.fqdn))
+        .map(item => ({ id: item.id, fqdn: item.fqdn.toLowerCase() }));
+}
+
+async function dropMailboxFromBeget(domain, mailbox) {
+    const result = await rateLimitedRequest(() => begetApiCall('mail/dropMailbox', { domain, mailbox }));
+    if (!begetSucceeded(result)) throw new Error(extractBegetError(result, 'Не удалось удалить ящик'));
+    return result;
+}
+
+function readStoredDomainMeta(domain) {
+    const row = db.prepare('SELECT * FROM domain_meta WHERE domain = ?').get(domain);
+    if (!row) return null;
+    return {
+        ...row,
+        nameservers: JSON.parse(row.nameservers || '[]'),
+        mxRecords: JSON.parse(row.mx_records || '[]')
+    };
+}
+
+function domainStatus(meta) {
+    if (!meta.expiresAt) return { expiryState: 'unknown', daysRemaining: null };
+    const daysRemaining = Math.ceil((new Date(meta.expiresAt).getTime() - Date.now()) / 86400000);
+    return {
+        expiryState: daysRemaining < 0 ? 'expired' : daysRemaining <= 30 ? 'warning' : 'active',
+        daysRemaining
+    };
+}
+
+async function queryRdapExpiry(domain) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    try {
+        const response = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, { signal: controller.signal });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        const event = (payload.events || []).find(item => ['expiration', 'expiry'].includes(item.eventAction));
+        return event?.eventDate || null;
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+async function inspectDomain(domain, force = false) {
+    const stored = readStoredDomainMeta(domain);
+    const checkedAt = stored?.checked_at ? new Date(stored.checked_at).getTime() : 0;
+    if (!force && stored && Number.isFinite(checkedAt) && Date.now() - checkedAt < 6 * 60 * 60 * 1000) {
+        return { domain, expiresAt: stored.expires_at, nameservers: stored.nameservers, mxRecords: stored.mxRecords, ...domainStatus({ expiresAt: stored.expires_at }) };
+    }
+
+    const [nameservers, mxRecords, expiresAt] = await Promise.all([
+        dns.resolveNs(domain).catch(() => []),
+        dns.resolveMx(domain).then(records => records.sort((a, b) => a.priority - b.priority).map(record => ({ exchange: record.exchange, priority: record.priority }))).catch(() => []),
+        queryRdapExpiry(domain)
+    ]);
+    db.prepare(`INSERT INTO domain_meta (domain, expires_at, nameservers, mx_records, checked_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(domain) DO UPDATE SET expires_at = excluded.expires_at,
+            nameservers = excluded.nameservers, mx_records = excluded.mx_records,
+            checked_at = CURRENT_TIMESTAMP`).run(domain, expiresAt, JSON.stringify(nameservers), JSON.stringify(mxRecords));
+    return { domain, expiresAt, nameservers, mxRecords, ...domainStatus({ expiresAt }) };
+}
+
+async function getDomainHealth(force = false) {
+    const domains = await fetchBegetDomains();
+    const result = [];
+    for (const domain of domains) {
+        const status = await inspectDomain(domain.fqdn, force);
+        let remoteNames = [];
+        let remoteError = null;
+        try {
+            remoteNames = await fetchBegetMailboxNames(domain.fqdn);
+            db.prepare('UPDATE domain_meta SET remote_mailbox_count = ?, remote_checked_at = CURRENT_TIMESTAMP WHERE domain = ?')
+                .run(remoteNames.length, domain.fqdn);
+        } catch (error) {
+            remoteError = error.message;
+        }
+        const local = db.prepare(`SELECT COUNT(*) AS total,
+            SUM(CASE WHEN last_activity_at IS NOT NULL AND last_activity_at < datetime('now', '-30 days') THEN 1 ELSE 0 END) AS inactive
+            FROM mailboxes WHERE domain = ?`).get(domain.fqdn);
+        const cloudflare = status.nameservers.some(name => /\.ns\.cloudflare\.com\.?$/i.test(name));
+        result.push({
+            ...domain,
+            ...status,
+            dnsProvider: cloudflare ? 'Cloudflare' : 'Другой DNS-провайдер',
+            cloudflare,
+            mailboxCount: remoteNames.length || 0,
+            localMailboxCount: local.total || 0,
+            inactiveCount: local.inactive || 0,
+            remoteError
+        });
+    }
+    return result;
+}
+
 async function fetchBegetMailboxNames(domain) {
     const result = await rateLimitedRequest(() => begetApiCall('mail/getMailboxList', { domain }));
     const requestOk = result?.status === 'success';
@@ -228,28 +433,120 @@ async function fetchBegetMailboxNames(domain) {
     }
 }
 
+app.use('/api', (req, res, next) => {
+    if (req.path === '/auth/status' || req.path === '/auth/login') return next();
+    if (req.path === '/mailbox-activity' && ACTIVITY_SYNC_TOKEN &&
+        secretsEqual(req.get('x-activity-token') || '', ACTIVITY_SYNC_TOKEN)) return next();
+    return requireAuth(req, res, next);
+});
+
+app.get('/api/auth/status', (req, res) => {
+    const session = readSession(req);
+    res.json({
+        enabled: AUTH_ENABLED,
+        authenticated: Boolean(session) || !AUTH_ENABLED,
+        role: session?.role || (AUTH_ENABLED ? null : 'admin')
+    });
+});
+
+app.post('/api/auth/login', (req, res) => {
+    if (!AUTH_ENABLED) return res.json({ success: true, role: 'admin' });
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const attempts = (failedLogins.get(ip) || []).filter(timestamp => now - timestamp < 10 * 60 * 1000);
+    if (attempts.length >= 10) {
+        return res.status(429).json({ error: 'Слишком много попыток. Повторите позже.' });
+    }
+
+    const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!code || code.length > 256) {
+        return res.status(400).json({ error: 'Введите код приглашения' });
+    }
+    const invitation = db.prepare(`SELECT id, role FROM invitations
+        WHERE code_hash = ? AND revoked_at IS NULL`).get(hashSecret(code));
+    if (!invitation) {
+        failedLogins.set(ip, [...attempts, now]);
+        return res.status(401).json({ error: 'Код приглашения недействителен' });
+    }
+
+    failedLogins.delete(ip);
+    const token = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = hashSecret(token);
+    const expiresAt = new Date(now + SESSION_TTL_MS).toISOString();
+    db.prepare(`INSERT INTO generator_sessions (token_hash, role, expires_at) VALUES (?, ?, ?)`)
+        .run(tokenHash, invitation.role, expiresAt);
+    db.prepare('UPDATE invitations SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(invitation.id);
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; HttpOnly; SameSite=Lax; Secure`);
+    res.json({ success: true, role: invitation.role });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    const cookieHeader = req.headers.cookie || '';
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
+    if (match) db.prepare('DELETE FROM generator_sessions WHERE token_hash = ?')
+        .run(hashSecret(decodeURIComponent(match[1])));
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`);
+    res.json({ success: true });
+});
+
+app.get('/api/admin/invitations', requireAdmin, (req, res) => {
+    const invitations = db.prepare(`SELECT id, role, label, created_at, last_used_at, revoked_at
+        FROM invitations ORDER BY created_at DESC`).all();
+    res.json({ invitations });
+});
+
+app.post('/api/admin/invitations', requireAdmin, (req, res) => {
+    const role = req.body?.role === 'admin' ? 'admin' : 'user';
+    const label = typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 80) : '';
+    const code = crypto.randomBytes(18).toString('base64url');
+    const result = db.prepare('INSERT INTO invitations (code_hash, role, label) VALUES (?, ?, ?)')
+        .run(hashSecret(code), role, label);
+    res.status(201).json({ id: result.lastInsertRowid, code, role, label });
+});
+
+app.delete('/api/admin/invitations/:id', requireAdmin, (req, res) => {
+    const result = db.prepare('UPDATE invitations SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(Number(req.params.id));
+    if (!result.changes) return res.status(404).json({ error: 'Приглашение не найдено' });
+    res.json({ success: true });
+});
+
+app.post('/api/mailbox-activity', (req, res) => {
+    if (!ACTIVITY_SYNC_TOKEN || !secretsEqual(req.get('x-activity-token') || '', ACTIVITY_SYNC_TOKEN)) {
+        return res.status(401).json({ error: 'Недействительный токен активности' });
+    }
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (!email || !email.includes('@')) return res.status(400).json({ error: 'Некорректный ящик' });
+    db.prepare(`UPDATE mailboxes SET last_activity_at = CURRENT_TIMESTAMP WHERE lower(email) = ?`).run(email);
+    res.json({ success: true });
+});
+
 // API Routes
 
 // Get list of domains
 app.get('/api/domains', async (req, res) => {
     try {
-        const result = await rateLimitedRequest(() => begetApiCall('domain/getList'));
-
-        const requestOk = result?.status === 'success';
-        const apiOk = !result?.answer?.status || result.answer.status === 'success';
-        const domainsList = Array.isArray(result?.answer?.result) ? result.answer.result : [];
-
-        if (requestOk && apiOk) {
-            const domains = domainsList.map(d => ({
-                id: d.id,
-                fqdn: d.fqdn
-            }));
-            res.json({ success: true, domains });
-        } else {
-            res.json({ success: false, error: extractBegetError(result, 'Failed to get domains') });
-        }
+        res.json({ success: true, domains: await fetchBegetDomains() });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/domain-health', async (req, res) => {
+    try {
+        res.json({ success: true, domains: await getDomainHealth(req.query.refresh === '1') });
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/domain-health/refresh', async (req, res) => {
+    try {
+        const domain = typeof req.body?.domain === 'string' ? req.body.domain.trim().toLowerCase() : '';
+        if (!validDomain(domain)) return res.status(400).json({ success: false, error: 'Введите корректный домен' });
+        res.json({ success: true, domain: await inspectDomain(domain, true) });
+    } catch (error) {
+        res.status(error.statusCode || 500).json({ success: false, error: error.message });
     }
 });
 
@@ -266,7 +563,7 @@ app.post('/api/domains', async (req, res) => {
             return res.status(502).json({ success: false, error: extractBegetError(current) });
         }
         if (current.answer?.result?.some(item => item.fqdn?.toLowerCase() === domain)) {
-            return res.json({ success: true, domain, alreadyExists: true });
+            return res.json({ success: true, domain, alreadyExists: true, dns: await inspectDomain(domain, true) });
         }
 
         const zones = await rateLimitedRequest(() => begetApiCall('domain/getZoneList'));
@@ -291,7 +588,7 @@ app.post('/api/domains', async (req, res) => {
         if (!begetSucceeded(added)) {
             return res.status(502).json({ success: false, error: extractBegetError(added) });
         }
-        res.status(201).json({ success: true, domain, id: added.answer?.result });
+        res.status(201).json({ success: true, domain, id: added.answer?.result, dns: await inspectDomain(domain, true) });
     } catch (error) {
         res.status(502).json({ success: false, error: error.message });
     }
@@ -424,8 +721,8 @@ app.post('/api/generate', async (req, res) => {
                 if (result.status === 'success' && result.answer?.status === 'success') {
                     // Save to local database
                     const stmt = db.prepare(`
-                        INSERT INTO mailboxes (email, password, domain, mailbox_name)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO mailboxes (email, password, domain, mailbox_name, last_activity_at)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                     `);
                     stmt.run(email, password, domain, mailboxName);
                     
@@ -458,6 +755,42 @@ app.post('/api/generate', async (req, res) => {
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
+});
+
+app.get('/api/admin/inactive-mailboxes', requireAdmin, (req, res) => {
+    const days = Math.min(3650, Math.max(1, Number(req.query.days) || 30));
+    const rows = db.prepare(`SELECT id, email, domain, mailbox_name, created_at, last_activity_at,
+        CAST(julianday('now') - julianday(last_activity_at) AS INTEGER) AS days_inactive
+        FROM mailboxes
+        WHERE last_activity_at IS NOT NULL AND last_activity_at < datetime('now', ?)
+        ORDER BY last_activity_at ASC, email ASC`).all(`-${days} days`);
+    res.json({ days, mailboxes: rows });
+});
+
+app.post('/api/admin/inactive-mailboxes/delete', requireAdmin, async (req, res) => {
+    const requested = Array.isArray(req.body?.mailboxes) ? req.body.mailboxes : [];
+    if (!requested.length || requested.length > 500) {
+        return res.status(400).json({ error: 'Выберите от 1 до 500 ящиков' });
+    }
+    const deleted = [];
+    const errors = [];
+    for (const item of requested) {
+        const domain = typeof item?.domain === 'string' ? item.domain.trim().toLowerCase() : '';
+        const mailbox = typeof item?.mailbox === 'string' ? item.mailbox.trim() : '';
+        if (!validDomain(domain) || !/^[a-z0-9._+-]{1,64}$/i.test(mailbox)) {
+            errors.push({ email: `${mailbox}@${domain}`, error: 'Некорректный ящик' });
+            continue;
+        }
+        try {
+            await dropMailboxFromBeget(domain, mailbox);
+            const email = `${mailbox}@${domain}`;
+            db.prepare('DELETE FROM mailboxes WHERE lower(email) = ?').run(email.toLowerCase());
+            deleted.push({ email });
+        } catch (error) {
+            errors.push({ email: `${mailbox}@${domain}`, error: error.message });
+        }
+    }
+    res.json({ success: errors.length === 0, deleted, errors, total: deleted.length, failed: errors.length });
 });
 
 app.post('/api/mailbox/password', async (req, res) => {
