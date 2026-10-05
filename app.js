@@ -73,7 +73,8 @@ db.prepare(`UPDATE mailboxes SET last_activity_at = created_at
     WHERE last_activity_at IS NULL AND created_at IS NOT NULL`).run();
 
 const SESSION_COOKIE = 'generator_session';
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Keep the invite login usable for a month, extending the idle window on activity.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ACTIVITY_SYNC_TOKEN = process.env.GENERATOR_ACTIVITY_TOKEN || '';
 const AUTH_ENABLED = process.env.GENERATOR_AUTH_ENABLED !== 'false';
 const failedLogins = new Map();
@@ -103,13 +104,29 @@ function seedInvitations() {
 
 seedInvitations();
 
-function readSession(req) {
+function setSessionCookie(res, token, maxAgeSeconds = SESSION_TTL_MS / 1000) {
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax; Secure`);
+}
+
+function readSession(req, res) {
     const cookieHeader = req.headers.cookie || '';
     const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
     if (!match) return null;
-    const tokenHash = hashSecret(decodeURIComponent(match[1]));
+    let token;
+    try {
+        token = decodeURIComponent(match[1]);
+    } catch {
+        return null;
+    }
+    const tokenHash = hashSecret(token);
     const session = db.prepare(`SELECT role FROM generator_sessions
         WHERE token_hash = ? AND expires_at > CURRENT_TIMESTAMP`).get(tokenHash);
+    if (session && res) {
+        const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+        db.prepare('UPDATE generator_sessions SET expires_at = ? WHERE token_hash = ?')
+            .run(expiresAt, tokenHash);
+        setSessionCookie(res, token);
+    }
     return session || null;
 }
 
@@ -118,7 +135,7 @@ function requireAuth(req, res, next) {
         req.auth = { role: 'admin' };
         return next();
     }
-    const session = readSession(req);
+    const session = readSession(req, res);
     if (!session) return res.status(401).json({ error: 'Требуется приглашение' });
     req.auth = session;
     next();
@@ -454,7 +471,7 @@ app.use('/api', (req, res, next) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-    const session = readSession(req);
+    const session = readSession(req, res);
     res.json({
         enabled: AUTH_ENABLED,
         authenticated: Boolean(session) || !AUTH_ENABLED,
@@ -489,7 +506,7 @@ app.post('/api/auth/login', (req, res) => {
     db.prepare(`INSERT INTO generator_sessions (token_hash, role, expires_at) VALUES (?, ?, ?)`)
         .run(tokenHash, invitation.role, expiresAt);
     db.prepare('UPDATE invitations SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(invitation.id);
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; HttpOnly; SameSite=Lax; Secure`);
+    setSessionCookie(res, token);
     res.json({ success: true, role: invitation.role });
 });
 

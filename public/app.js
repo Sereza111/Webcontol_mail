@@ -47,6 +47,19 @@ const appShell = document.getElementById('appShell');
 const authForm = document.getElementById('authForm');
 const authGateMessage = document.getElementById('authGateMessage');
 const adminTab = document.getElementById('adminTab');
+let authExpiredHandled = false;
+
+// A protected request can outlive the page that initiated it. Keep the shell
+// from displaying a misleading API error when the invite session has expired.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+    const response = await nativeFetch(...args);
+    const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
+    if (response.status === 401 && requestUrl.startsWith('/api/') && !requestUrl.startsWith('/api/auth/')) {
+        handleAuthExpired();
+    }
+    return response;
+};
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -68,6 +81,7 @@ function setupAuthListeners() {
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Не удалось войти');
             document.getElementById('inviteCodeInput').value = '';
+            authExpiredHandled = false;
             openGenerator(data.role);
         } catch (error) {
             authGateMessage.textContent = error.message;
@@ -81,7 +95,19 @@ function setupAuthListeners() {
         appShell.classList.add('d-none');
         authGate.classList.remove('d-none');
         currentRole = null;
+        authExpiredHandled = false;
     });
+}
+
+function handleAuthExpired() {
+    if (authExpiredHandled) return;
+    authExpiredHandled = true;
+    currentRole = null;
+    appShell.classList.add('d-none');
+    authGate.classList.remove('d-none');
+    authGateMessage.textContent = 'Сессия истекла. Введите код приглашения ещё раз.';
+    authGateMessage.classList.add('auth-error');
+    document.getElementById('inviteCodeInput').focus();
 }
 
 async function checkAuth() {
